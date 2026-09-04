@@ -3,7 +3,7 @@ import { useColorScheme } from 'react-native';
 
 import { Colors } from '@/constants/theme';
 
-export default function AppTabs() {
+export default function TabsLayout() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
 
@@ -13,13 +13,12 @@ export default function AppTabs() {
         headerShown: false,
         tabBarStyle: { backgroundColor: colors.background },
         tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: colors.backgroundElement,
+        tabBarInactiveTintColor: colors.textSecondary,
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Stylist' }} />
       <Tabs.Screen name="explore" options={{ title: 'Closet' }} />
       <Tabs.Screen name="lookbook" options={{ title: 'Lookbook' }} />
-      <Tabs.Screen name="add-item" options={{ href: null }} />
     </Tabs>
   );
 }

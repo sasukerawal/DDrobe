@@ -2,6 +2,7 @@ import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 import Animated, { Keyframe, Easing } from 'react-native-reanimated';
 
+// @ts-ignore — CSS modules are resolved by the web bundler, not tsc
 import classes from './animated-icon.module.css';
 const DURATION = 300;
 

@@ -1,40 +1,59 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * DDrobe Design Tokens
+ * Source of truth for all colors, spacing, and typography.
+ * All components MUST import from this file. Never hardcode hex values.
+ * Tokens sourced from context/ui_context.md
  */
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore — global.css is processed by the Expo web bundler, not by tsc
 import '@/global.css';
-
 import { Platform } from 'react-native';
 
 export const Colors = {
+  // Light / Dark mode surfaces
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: '#1A1A1A',
+    textSecondary: '#6B7280',
+    background: '#FAFAFA',
+    backgroundElement: '#FFFFFF',
+    backgroundSelected: '#F3F0FF',
+    surface: '#FFFFFF',
+    border: 'rgba(0,0,0,0.08)',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: '#F9FAFB',
+    textSecondary: '#9CA3AF',
+    background: '#121212',
+    backgroundElement: '#1E1E1E',
+    backgroundSelected: '#2D2040',
+    surface: '#1E1E1E',
+    border: '#333333',
   },
+  // Brand palette
+  primary: '#6D28D9',
+  primaryLight: '#8B5CF6',
+  primaryDark: '#5B21B6',
+  // Functional
+  success: '#10B981',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+  glow: 'rgba(139, 92, 246, 0.4)',
+  // Flat convenience tokens (dark-mode defaults for screens without useColorScheme)
+  background: '#121212',
+  text: '#F9FAFB',
+  surface: '#1E1E1E',
+  backgroundElement: '#1E1E1E',
+  textSecondary: '#9CA3AF',
 } as const;
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
   default: {
@@ -59,6 +78,14 @@ export const Spacing = {
   four: 24,
   five: 32,
   six: 64,
+} as const;
+
+// Border radiuses from ui_context.md
+export const Radius = {
+  card: 16,
+  button: 12,
+  input: 10,
+  small: 6,
 } as const;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
