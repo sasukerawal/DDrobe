@@ -35,7 +35,13 @@ export default function SignUpScreen() {
 
   const handleSSO = async (strategy: 'oauth_google' | 'oauth_apple') => {
     try {
-      const { createdSessionId, setActive: ssoSetActive } = await startSSOFlow({ strategy });
+      const result = await startSSOFlow({ strategy });
+      const { createdSessionId, setActive: ssoSetActive, error } = result as any;
+      if (error) {
+        const msg = error?.longMessage ?? error?.message ?? 'Social sign-in failed.';
+        Alert.alert('Sign in failed', msg);
+        return;
+      }
       if (createdSessionId && ssoSetActive) {
         await ssoSetActive({ session: createdSessionId });
       }
@@ -154,12 +160,12 @@ export default function SignUpScreen() {
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={[styles.button, (loading || !isLoaded) && styles.buttonDisabled]}
               onPress={handleVerify}
-              disabled={loading}
+              disabled={loading || !isLoaded}
               activeOpacity={0.8}
             >
-              {loading ? (
+              {(loading || !isLoaded) ? (
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.buttonText}>Verify & Enter</Text>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@clerk/expo';
@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { createAuthenticatedClient } from '@/utils/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { Colors, Spacing } from '@/constants/theme';
+import { useThemeColors, type ThemeColors } from '@/hooks/useThemeColors';
 import type { ClosetItem } from '@/types';
 
 type FilterCategory = 'all' | 'top' | 'bottom' | 'shoe' | 'outerwear' | 'accessory';
@@ -20,6 +21,8 @@ export default function ClosetScreen() {
   const [loading, setLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterCategory>('all');
   const [resellCount, setResellCount] = useState(0);
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   useEffect(() => {
     fetchCloset();
@@ -42,10 +45,24 @@ export default function ClosetScreen() {
       const items = data || [];
       setClosetItems(items);
 
-      // Count items older than 6 months for resell nudge
+      // Resell nudge: items not worn in the last 6 months
+      // Join with outfits_history to find the most recent wear date per item
       const sixMonthsAgo = new Date();
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-      setResellCount(items.filter(i => new Date(i.created_at) < sixMonthsAgo).length);
+      const itemIds = items.map(i => i.id);
+      if (itemIds.length > 0) {
+        const { data: historyData } = await client
+          .from('outfits_history')
+          .select('top_id, bottom_id, shoe_id, accessory_id, date_worn')
+          .gte('date_worn', sixMonthsAgo.toISOString().split('T')[0]);
+        const recentlyWornIds = new Set<string>();
+        for (const row of historyData ?? []) {
+          [row.top_id, row.bottom_id, row.shoe_id, row.accessory_id].forEach(id => {
+            if (id) recentlyWornIds.add(id);
+          });
+        }
+        setResellCount(items.filter(i => !recentlyWornIds.has(i.id)).length);
+      }
     } catch (e: unknown) {
       console.error('[Closet] fetchCloset error:', e);
       const msg = e instanceof Error ? e.message : 'Failed to load your closet.';
@@ -75,7 +92,7 @@ export default function ClosetScreen() {
     } catch (e: unknown) {
       console.error(e);
       Alert.alert('Error', 'Could not update item status.');
-      setClosetItems(closetItems.map(i => (i.id === item.id ? { ...i, is_in_wash: !newStatus } : i)));
+      setClosetItems(useAppStore.getState().closetItems.map(i => (i.id === item.id ? { ...i, is_in_wash: !newStatus } : i)));
     }
   };
 
@@ -187,10 +204,10 @@ export default function ClosetScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
   },
   headerRow: {
     paddingHorizontal: Spacing.four,
@@ -200,11 +217,11 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: Colors.text,
+    color: c.text,
   },
   hint: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: c.textSecondary,
     marginTop: 2,
   },
   nudgeBanner: {
@@ -229,14 +246,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: 20,
-    backgroundColor: Colors.backgroundElement,
+    backgroundColor: c.backgroundElement,
   },
   filterPillActive: {
     backgroundColor: Colors.primary,
   },
   filterText: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: c.textSecondary,
     fontWeight: '500',
   },
   filterTextActive: {
@@ -255,7 +272,7 @@ const styles = StyleSheet.create({
     flex: 1,
     aspectRatio: 3 / 4,
     borderRadius: 12,
-    backgroundColor: Colors.surface,
+    backgroundColor: c.surface,
     overflow: 'hidden',
   },
   image: {
@@ -270,13 +287,13 @@ const styles = StyleSheet.create({
     paddingTop: 80,
   },
   emptyText: {
-    color: Colors.text,
+    color: c.text,
     fontSize: 18,
     fontWeight: '600',
     marginBottom: Spacing.one,
   },
   emptySubtext: {
-    color: Colors.textSecondary,
+    color: c.textSecondary,
     fontSize: 14,
   },
   washedImage: {

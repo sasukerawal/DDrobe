@@ -59,7 +59,7 @@ function InitialLayout() {
 
     const sync = async () => {
       try {
-        const token = await getToken({ template: 'supabase' });
+        const token = await getToken();
         if (!token) return;
         const email = user.primaryEmailAddress?.emailAddress ?? '';
         const dbUser = await syncUserToSupabase(token, userId, email);

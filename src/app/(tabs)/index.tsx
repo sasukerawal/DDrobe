@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, Text, ActivityIndicator, Dimensions, TouchableOpacity, Linking, Alert, Modal, TextInput } from 'react-native';
 import { useAuth } from '@clerk/expo';
+import type { WeatherContext } from '@/types';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -14,6 +15,7 @@ import { Image } from 'expo-image';
 import { createAuthenticatedClient } from '@/utils/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { Colors, Spacing } from '@/constants/theme';
+import { useThemeColors, type ThemeColors } from '@/hooks/useThemeColors';
 import type { GeneratedOutfit } from '@/types';
 import * as Haptics from 'expo-haptics';
 
@@ -42,6 +44,9 @@ export default function DailyStylistScreen() {
   const [generatingMore, setGeneratingMore] = useState(false);
   const [vacationModalVisible, setVacationModalVisible] = useState(false);
   const [vacationPrompt, setVacationPrompt] = useState('');
+  const weatherRef = useRef<WeatherContext | null>(null);
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   useEffect(() => {
     fetchClosetAndGenerate();
@@ -88,13 +93,15 @@ export default function DailyStylistScreen() {
         return;
       }
 
-      const { status } = await Location.requestForegroundPermissionsAsync();
       let lat = 0;
       let lon = 0;
-      if (status === 'granted') {
-        const location = await Location.getCurrentPositionAsync({});
-        lat = location.coords.latitude;
-        lon = location.coords.longitude;
+      if (count >= 3) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({});
+          lat = location.coords.latitude;
+          lon = location.coords.longitude;
+        }
       }
 
       const { data, error } = await client.functions.invoke('generate-outfit', {
@@ -103,13 +110,16 @@ export default function DailyStylistScreen() {
 
       if (error) throw error;
       if (data && data.outfits) {
+        if (data.weather) weatherRef.current = data.weather;
         setDailyOutfits([...useAppStore.getState().dailyOutfits, ...data.outfits]);
+      }
+      if (data?.limitReached) {
+        setErrorMsg('daily_limit');
       }
     } catch (e: any) {
       console.error('[Stylist] fetchClosetAndGenerate error:', e);
       const msg = e.message || 'Failed to generate outfits';
       setErrorMsg(msg);
-      // Always show an alert — setErrorMsg is invisible when cards already exist
       Alert.alert('Error', msg);
     } finally {
       setLoading(false);
@@ -125,14 +135,32 @@ export default function DailyStylistScreen() {
     rewarded?.load();
   };
 
-  const onSwipe = (direction: 'left' | 'right', outfit: GeneratedOutfit) => {
+  const onSwipe = async (direction: 'left' | 'right', outfit: GeneratedOutfit) => {
     if (direction === 'right') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // Automatically post to feed? Or open modal. For now, we leave it simple.
     } else {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     removeOutfit(outfit.id);
+
+    // Persist to outfits_history — fire and forget, don't block UX
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const client = createAuthenticatedClient(token);
+      await client.from('outfits_history').insert({
+        user_id: userId,
+        top_id: outfit.top?.id ?? null,
+        bottom_id: outfit.bottom?.id ?? null,
+        shoe_id: outfit.shoe?.id ?? null,
+        accessory_id: outfit.accessory?.id ?? null,
+        weather_context: weatherRef.current ?? {},
+        date_worn: new Date().toISOString().split('T')[0],
+        rating: direction === 'right' ? 5 : 1,
+      });
+    } catch (e) {
+      console.warn('[Stylist] outfits_history insert failed:', e);
+    }
   };
 
   const postToLookbook = async (outfit: GeneratedOutfit) => {
@@ -178,18 +206,25 @@ export default function DailyStylistScreen() {
   }
 
   if (errorMsg && dailyOutfits.length === 0) {
+    const isDailyLimit = errorMsg === 'daily_limit';
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.errorIcon}>👗</Text>
-        <Text style={styles.errorTitle}>Couldn't load your outfits</Text>
+        <Text style={styles.errorIcon}>{isDailyLimit ? '✨' : '👗'}</Text>
+        <Text style={styles.errorTitle}>
+          {isDailyLimit ? "You've hit today's limit" : "Couldn't load your outfits"}
+        </Text>
         <Text style={styles.errorText}>
-          {errorMsg.includes('closet is empty')
+          {isDailyLimit
+            ? 'Watch an ad to unlock more outfit suggestions, or come back tomorrow!'
+            : errorMsg.includes('closet is empty')
             ? 'Add some clothing items to your closet first, then come back!'
             : 'Something went wrong. Check your connection and try again.'}
         </Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => fetchClosetAndGenerate()}>
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
+        {!isDailyLimit && (
+          <TouchableOpacity style={styles.retryButton} onPress={() => fetchClosetAndGenerate()}>
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
     );
   }
@@ -292,6 +327,8 @@ interface SwipeableCardProps {
 }
 
 function SwipeableCard({ outfit, isFirst, onSwipe, onPost }: SwipeableCardProps) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
 
@@ -340,6 +377,8 @@ function SwipeableCard({ outfit, isFirst, onSwipe, onPost }: SwipeableCardProps)
 }
 
 function CardContent({ outfit, onPost }: { outfit: GeneratedOutfit, onPost: () => void }) {
+  const colors = useThemeColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.cardContent}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.three }}>
@@ -373,16 +412,16 @@ function CardContent({ outfit, onPost }: { outfit: GeneratedOutfit, onPost: () =
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
     padding: Spacing.four,
   },
   headerRow: {
@@ -396,7 +435,7 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: Colors.text,
+    color: c.text,
   },
   vacationButton: {
     backgroundColor: 'rgba(109, 40, 217, 0.1)',
@@ -411,7 +450,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: Spacing.three,
-    color: Colors.textSecondary,
+    color: c.textSecondary,
     fontSize: 16,
   },
   errorIcon: {
@@ -421,12 +460,12 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: Colors.text,
+    color: c.text,
     textAlign: 'center',
     marginBottom: Spacing.two,
   },
   errorText: {
-    color: Colors.textSecondary,
+    color: c.textSecondary,
     fontSize: 15,
     textAlign: 'center',
     lineHeight: 22,
@@ -448,7 +487,7 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
   },
   emptyText: {
-    color: Colors.textSecondary,
+    color: c.textSecondary,
     fontSize: 18,
     textAlign: 'center',
     marginBottom: Spacing.four,
@@ -460,7 +499,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   adButtonDisabled: {
-    backgroundColor: Colors.textSecondary,
+    backgroundColor: c.textSecondary,
   },
   adButtonText: {
     color: '#FFF',
@@ -482,7 +521,7 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     height: '100%',
-    backgroundColor: Colors.surface,
+    backgroundColor: c.surface,
     borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -521,7 +560,7 @@ const styles = StyleSheet.create({
     width: '45%',
     aspectRatio: 3 / 4,
     borderRadius: 12,
-    backgroundColor: Colors.backgroundElement,
+    backgroundColor: c.backgroundElement,
   },
   sponsoredWrapper: {
     backgroundColor: 'rgba(139, 92, 246, 0.1)',
@@ -538,7 +577,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.one,
   },
   sponsoredDesc: {
-    color: Colors.text,
+    color: c.text,
     fontSize: 12,
     textAlign: 'center',
     marginBottom: Spacing.two,
@@ -550,7 +589,7 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 16,
-    color: Colors.text,
+    color: c.text,
     textAlign: 'center',
     marginTop: Spacing.three,
     lineHeight: 24,
@@ -563,7 +602,7 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '85%',
-    backgroundColor: Colors.surface,
+    backgroundColor: c.surface,
     borderRadius: 16,
     padding: Spacing.four,
     shadowColor: '#000',
@@ -575,20 +614,20 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: Colors.text,
+    color: c.text,
     marginBottom: Spacing.one,
   },
   modalSub: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: c.textSecondary,
     marginBottom: Spacing.three,
   },
   modalInput: {
     borderWidth: 1,
-    borderColor: Colors.backgroundElement,
+    borderColor: c.backgroundElement,
     borderRadius: 8,
     padding: Spacing.three,
-    color: Colors.text,
+    color: c.text,
     fontSize: 16,
     marginBottom: Spacing.four,
   },
@@ -601,7 +640,7 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
   },
   modalCancelText: {
-    color: Colors.textSecondary,
+    color: c.textSecondary,
     fontSize: 16,
     fontWeight: '600',
   },

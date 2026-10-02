@@ -130,16 +130,28 @@ Deno.serve(async (req: Request) => {
 
   try {
     const payload: WebhookPayload = await req.json();
-    const { html, userId } = payload;
+    const { html, from } = payload;
+    let { userId } = payload;
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Identity bridge: if userId not provided, look it up by sender email
+    if (!userId && from) {
+      const senderEmail = from.match(/<(.+)>/)?.[1] ?? from.trim();
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', senderEmail)
+        .single();
+      userId = user?.id ?? null;
+    }
 
     if (!html || !userId) {
-      return new Response(JSON.stringify({ error: 'Missing html or userId' }), {
+      return new Response(JSON.stringify({ error: 'Missing html or could not resolve userId from sender email.' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
     }
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const productImageUrls = extractProductImageUrls(html);
 
     if (productImageUrls.length === 0) {

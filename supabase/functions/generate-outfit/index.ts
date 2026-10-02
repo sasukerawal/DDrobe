@@ -51,6 +51,28 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Step 0: Check and enforce daily generation limit (10 per day per user)
+    const DAILY_LIMIT = 10;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: userData, error: userFetchError } = await supabase
+      .from('users')
+      .select('daily_generations_used')
+      .eq('id', userId)
+      .single();
+
+    if (!userFetchError && userData && userData.daily_generations_used >= DAILY_LIMIT) {
+      return new Response(
+        JSON.stringify({ limitReached: true, error: 'Daily generation limit reached. Watch an ad or come back tomorrow!' }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Increment usage counter
+    await supabase
+      .from('users')
+      .update({ daily_generations_used: (userData?.daily_generations_used ?? 0) + 1 })
+      .eq('id', userId);
+
     // Step 1: Fetch Weather
     let weatherContext: WeatherContext = { temp_celsius: 20, condition: 'Clear', city: 'Unknown' };
     if (OPENWEATHER_API_KEY && OPENWEATHER_API_KEY !== 'your_openweather_api_key_here') {

@@ -32,7 +32,13 @@ export default function SignInScreen() {
 
   const handleSSO = async (strategy: 'oauth_google' | 'oauth_apple') => {
     try {
-      const { createdSessionId, setActive: ssoSetActive } = await startSSOFlow({ strategy });
+      const result = await startSSOFlow({ strategy });
+      const { createdSessionId, setActive: ssoSetActive, error } = result as any;
+      if (error) {
+        const msg = error?.longMessage ?? error?.message ?? 'Social sign-in failed.';
+        Alert.alert('Sign in failed', msg);
+        return;
+      }
       if (createdSessionId && ssoSetActive) {
         await ssoSetActive({ session: createdSessionId });
       }
