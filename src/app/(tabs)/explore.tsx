@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -19,13 +19,14 @@ export default function ClosetScreen() {
   const { closetItems, setClosetItems } = useAppStore();
   const [loading, setLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterCategory>('all');
+  const [resellCount, setResellCount] = useState(0);
 
   useEffect(() => {
     fetchCloset();
   }, []);
 
-  const fetchCloset = async () => {
-    if (!userId || closetItems.length > 0) return;
+  const fetchCloset = async (force = false) => {
+    if (!userId || (!force && closetItems.length > 0)) return;
     setLoading(true);
     try {
       const token = await getToken({ template: 'supabase' });
@@ -38,9 +39,17 @@ export default function ClosetScreen() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setClosetItems(data || []);
-    } catch (e) {
-      console.error(e);
+      const items = data || [];
+      setClosetItems(items);
+
+      // Count items older than 6 months for resell nudge
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      setResellCount(items.filter(i => new Date(i.created_at) < sixMonthsAgo).length);
+    } catch (e: unknown) {
+      console.error('[Closet] fetchCloset error:', e);
+      const msg = e instanceof Error ? e.message : 'Failed to load your closet.';
+      Alert.alert('Error', msg);
     } finally {
       setLoading(false);
     }
@@ -84,6 +93,24 @@ export default function ClosetScreen() {
         <Text style={styles.hint}>Long-press to mark as In Wash</Text>
       </View>
 
+      {resellCount > 0 && (
+        <TouchableOpacity
+          style={styles.nudgeBanner}
+          activeOpacity={0.85}
+          onPress={() =>
+            Alert.alert(
+              'Time to Resell?',
+              `You have ${resellCount} item${resellCount > 1 ? 's' : ''} that ${resellCount > 1 ? 'have' : 'has'} been sitting in your closet for over 6 months. Consider selling on Depop, Poshmark, or Vinted to make some money!`,
+              [{ text: 'Got it', style: 'cancel' }],
+            )
+          }
+        >
+          <Text style={styles.nudgeText}>
+            🛍️ {resellCount} item{resellCount > 1 ? 's' : ''} ready to resell — tap to learn more
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <View style={styles.filterContainer}>
         <FlatList
           horizontal
@@ -115,7 +142,7 @@ export default function ClosetScreen() {
           numColumns={3}
           contentContainerStyle={styles.gridContainer}
           columnWrapperStyle={styles.gridRow}
-          onRefresh={fetchCloset}
+          onRefresh={() => fetchCloset(true)}
           refreshing={loading}
           ListEmptyComponent={
             <View style={styles.center}>
@@ -179,6 +206,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  nudgeBanner: {
+    marginHorizontal: Spacing.four,
+    marginBottom: Spacing.two,
+    backgroundColor: '#2D1B69',
+    borderRadius: 12,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  nudgeText: {
+    color: '#E9D5FF',
+    fontSize: 13,
+    fontWeight: '500',
   },
   filterContainer: {
     marginBottom: Spacing.three,

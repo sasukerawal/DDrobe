@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { Alert, StyleSheet, View, Text, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { supabase } from '@/utils/supabase';
+import { useAuth } from '@clerk/expo';
+import { createAuthenticatedClient } from '@/utils/supabase';
 import { Colors, Spacing } from '@/constants/theme';
 
 interface FeedPost {
@@ -16,6 +17,7 @@ interface FeedPost {
 }
 
 export default function LookbookScreen() {
+  const { getToken } = useAuth();
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -26,16 +28,22 @@ export default function LookbookScreen() {
   const fetchFeed = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const token = await getToken({ template: 'supabase' });
+      if (!token) throw new Error('Not authenticated');
+      const client = createAuthenticatedClient(token);
+
+      const { data, error } = await client
         .from('feed_posts')
         .select('*')
         .eq('moderation_status', 'approved')
         .order('created_at', { ascending: false });
-        
+
       if (error) throw error;
       setPosts(data || []);
-    } catch (e) {
-      console.error(e);
+    } catch (e: unknown) {
+      console.error('[Lookbook] fetchFeed error:', e);
+      const msg = e instanceof Error ? e.message : 'Failed to load the feed.';
+      Alert.alert('Error', msg);
     } finally {
       setLoading(false);
     }
@@ -47,10 +55,22 @@ export default function LookbookScreen() {
       <View style={styles.postContent}>
         <Text style={styles.caption}>{item.caption}</Text>
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Alert.alert('Coming soon', 'Likes are coming in the next update!');
+            }}
+          >
             <Text style={styles.actionText}>❤️ Like</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Alert.alert('Coming soon', 'Comments are coming in the next update!');
+            }}
+          >
             <Text style={styles.actionText}>💬 Comment</Text>
           </TouchableOpacity>
         </View>

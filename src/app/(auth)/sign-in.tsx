@@ -1,4 +1,5 @@
 import {
+  Alert,
   StyleSheet,
   Text,
   View,
@@ -9,14 +10,18 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { useSignIn } from '@clerk/clerk-expo';
+import { useSignIn, useSSO } from '@clerk/expo';
+import * as WebBrowser from 'expo-web-browser';
 import { useRouter, Link } from 'expo-router';
 import { useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 
+WebBrowser.maybeCompleteAuthSession();
+
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn();
+  const { startSSOFlow } = useSSO();
   const router = useRouter();
 
   const [email, setEmail] = useState('');
@@ -24,8 +29,34 @@ export default function SignInScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const handleSSO = async (strategy: 'oauth_google' | 'oauth_apple') => {
+    try {
+      const { createdSessionId, setActive: ssoSetActive } = await startSSOFlow({ strategy });
+      if (createdSessionId && ssoSetActive) {
+        await ssoSetActive({ session: createdSessionId });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Social sign-in failed.';
+      Alert.alert('Sign in failed', msg);
+    }
+  };
+
   const handleSignIn = async () => {
-    if (!isLoaded) return;
+    if (!isLoaded || !signIn) return; // button is disabled while not loaded
+
+    if (!email.trim()) {
+      const msg = 'Please enter your email address.';
+      setError(msg);
+      Alert.alert('Missing field', msg);
+      return;
+    }
+    if (!password) {
+      const msg = 'Please enter your password.';
+      setError(msg);
+      Alert.alert('Missing field', msg);
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setLoading(true);
     setError(null);
@@ -35,9 +66,14 @@ export default function SignInScreen() {
       await setActive({ session: result.createdSessionId });
       router.replace('/');
     } catch (err: unknown) {
+      console.error('[SignIn] error:', err);
+      const clerkErr = err as any;
       const message =
-        err instanceof Error ? err.message : 'Sign in failed. Please try again.';
+        clerkErr?.errors?.[0]?.longMessage ??
+        clerkErr?.errors?.[0]?.message ??
+        (err instanceof Error ? err.message : 'Sign in failed. Please try again.');
       setError(message);
+      Alert.alert('Sign in failed', message);
     } finally {
       setLoading(false);
     }
@@ -87,17 +123,41 @@ export default function SignInScreen() {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, (loading || !isLoaded) && styles.buttonDisabled]}
             onPress={handleSignIn}
-            disabled={loading}
+            disabled={loading || !isLoaded}
             activeOpacity={0.8}
           >
-            {loading ? (
+            {(loading || !isLoaded) ? (
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.buttonText}>Sign In</Text>
             )}
           </TouchableOpacity>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={styles.socialButton}
+            onPress={() => handleSSO('oauth_google')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.socialButtonText}>🌐  Continue with Google</Text>
+          </TouchableOpacity>
+
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.socialButton}
+              onPress={() => handleSSO('oauth_apple')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.socialButtonText}>🍎  Continue with Apple</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.footer}>
@@ -161,6 +221,36 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginVertical: Spacing.one,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.dark.border,
+  },
+  dividerText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 13,
+  },
+  socialButton: {
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: Radius.button,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+    minHeight: 52,
+    justifyContent: 'center',
+    backgroundColor: Colors.dark.backgroundElement,
+  },
+  socialButtonText: {
+    color: Colors.dark.text,
+    fontWeight: '600',
+    fontSize: 16,
+  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',

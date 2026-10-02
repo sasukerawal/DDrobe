@@ -10,7 +10,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const OPENWEATHER_API_KEY = Deno.env.get('OPENWEATHER_API_KEY')!;
 
 const GEMINI_API_URL =
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${GEMINI_API_KEY}`;
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 interface ClosetItem {
   id: string;
@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
     const body: any = await req.json();
     const { userId, lat, lon, closetItems, count = 3, vacationContext } = body;
 
-    if (!userId || !lat || !lon || !closetItems || closetItems.length === 0) {
+    if (!userId || !closetItems || closetItems.length === 0) {
       return new Response(JSON.stringify({ error: 'Missing required parameters or empty closet.' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },

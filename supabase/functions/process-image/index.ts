@@ -1,6 +1,6 @@
 // Supabase Edge Function: process-image
 // Receives a base64 image, calls Gemini Vision for tagging, saves to closet_items.
-// Uses gemini-3.7-flash via the Gemini REST API (no SDK needed in Deno).
+// Uses gemini-2.0-flash via the Gemini REST API (no SDK needed in Deno).
 // Cost: Gemini free tier covers 1,500 requests/day = ~$0.00 for typical usage.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -10,7 +10,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const GEMINI_API_URL =
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${GEMINI_API_KEY}`;
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 interface ProcessImageBody {
   imageBase64: string;

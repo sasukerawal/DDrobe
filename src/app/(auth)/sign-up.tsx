@@ -1,4 +1,5 @@
 import {
+  Alert,
   StyleSheet,
   Text,
   View,
@@ -9,16 +10,21 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { useSignUp } from '@clerk/clerk-expo';
+import { useSignUp, useSSO } from '@clerk/expo';
+import * as WebBrowser from 'expo-web-browser';
 import { useRouter, Link } from 'expo-router';
 import { useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 
+WebBrowser.maybeCompleteAuthSession();
+
 export default function SignUpScreen() {
   const { signUp, setActive, isLoaded } = useSignUp();
+  const { startSSOFlow } = useSSO();
   const router = useRouter();
 
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pendingVerification, setPendingVerification] = useState(false);
@@ -26,27 +32,65 @@ export default function SignUpScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const handleSSO = async (strategy: 'oauth_google' | 'oauth_apple') => {
+    try {
+      const { createdSessionId, setActive: ssoSetActive } = await startSSOFlow({ strategy });
+      if (createdSessionId && ssoSetActive) {
+        await ssoSetActive({ session: createdSessionId });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Social sign-in failed.';
+      Alert.alert('Sign in failed', msg);
+    }
+  };
+
   const handleSignUp = async () => {
-    if (!isLoaded) return;
+    if (!isLoaded || !signUp) return; // button is disabled while not loaded
+
+    // Client-side validation before hitting the API
+    if (!username.trim()) {
+      const msg = 'Please enter a username.';
+      setError(msg);
+      Alert.alert('Missing field', msg);
+      return;
+    }
+    if (!email.trim() || !email.includes('@')) {
+      const msg = 'Please enter a valid email address.';
+      setError(msg);
+      Alert.alert('Missing field', msg);
+      return;
+    }
+    if (password.length < 15) {
+      const msg = `Password must be at least 15 characters (yours is ${password.length}).`;
+      setError(msg);
+      Alert.alert('Password too short', msg);
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setLoading(true);
     setError(null);
 
     try {
-      await signUp.create({ emailAddress: email, password });
+      await signUp.create({ username, emailAddress: email, password });
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       setPendingVerification(true);
     } catch (err: unknown) {
+      console.error('[SignUp] create error:', err);
+      const clerkErr = err as any;
       const message =
-        err instanceof Error ? err.message : 'Sign up failed. Please try again.';
+        clerkErr?.errors?.[0]?.longMessage ??
+        clerkErr?.errors?.[0]?.message ??
+        (err instanceof Error ? err.message : 'Sign up failed. Please try again.');
       setError(message);
+      Alert.alert('Sign up failed', message);
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerify = async () => {
-    if (!isLoaded) return;
+    if (!isLoaded || !signUp) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     setError(null);
@@ -56,8 +100,12 @@ export default function SignUpScreen() {
       await setActive({ session: result.createdSessionId });
       router.replace('/');
     } catch (err: unknown) {
+      console.error('[SignUp] verify error:', err);
+      const clerkErr = err as any;
       const message =
-        err instanceof Error ? err.message : 'Verification failed. Check your code.';
+        clerkErr?.errors?.[0]?.longMessage ??
+        clerkErr?.errors?.[0]?.message ??
+        (err instanceof Error ? err.message : 'Verification failed. Check your code.');
       setError(message);
     } finally {
       setLoading(false);
@@ -118,6 +166,21 @@ export default function SignUpScreen() {
 
         <View style={styles.form}>
           <View style={styles.inputGroup}>
+            <Text style={styles.label}>Username</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="your_username"
+              placeholderTextColor={Colors.dark.textSecondary}
+              value={username}
+              onChangeText={(t) => setUsername(t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="username"
+              autoComplete="username-new"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
             <Text style={styles.label}>Email</Text>
             <TextInput
               style={styles.input}
@@ -136,7 +199,7 @@ export default function SignUpScreen() {
             <Text style={styles.label}>Password</Text>
             <TextInput
               style={styles.input}
-              placeholder="••••••••"
+              placeholder="Min. 15 characters"
               placeholderTextColor={Colors.dark.textSecondary}
               value={password}
               onChangeText={setPassword}
@@ -144,22 +207,47 @@ export default function SignUpScreen() {
               textContentType="newPassword"
               autoComplete="new-password"
             />
+            <Text style={styles.hint}>Must be at least 15 characters</Text>
           </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, (loading || !isLoaded) && styles.buttonDisabled]}
             onPress={handleSignUp}
-            disabled={loading}
+            disabled={loading || !isLoaded}
             activeOpacity={0.8}
           >
-            {loading ? (
+            {(loading || !isLoaded) ? (
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.buttonText}>Create Account</Text>
             )}
           </TouchableOpacity>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={styles.socialButton}
+            onPress={() => handleSSO('oauth_google')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.socialButtonText}>🌐  Continue with Google</Text>
+          </TouchableOpacity>
+
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.socialButton}
+              onPress={() => handleSSO('oauth_apple')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.socialButtonText}>🍎  Continue with Apple</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.footer}>
@@ -197,6 +285,7 @@ const styles = StyleSheet.create({
   form: { gap: Spacing.three },
   inputGroup: { gap: Spacing.one },
   label: { fontSize: 14, fontWeight: '600', color: Colors.dark.textSecondary },
+  hint: { fontSize: 12, color: Colors.dark.textSecondary, marginTop: 2 },
   input: {
     backgroundColor: Colors.dark.backgroundElement,
     borderRadius: Radius.input,
@@ -223,6 +312,36 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginVertical: Spacing.one,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.dark.border,
+  },
+  dividerText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 13,
+  },
+  socialButton: {
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: Radius.button,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+    minHeight: 52,
+    justifyContent: 'center',
+    backgroundColor: Colors.dark.backgroundElement,
+  },
+  socialButtonText: {
+    color: Colors.dark.text,
+    fontWeight: '600',
+    fontSize: 16,
+  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, ActivityIndicator, Dimensions, TouchableOpacity, Linking, Alert, Modal, TextInput } from 'react-native';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/expo';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -88,28 +88,29 @@ export default function DailyStylistScreen() {
         return;
       }
 
-      if (dailyOutfits.length === 0 || count < 3) {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        let lat = 0;
-        let lon = 0;
-        if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({});
-          lat = location.coords.latitude;
-          lon = location.coords.longitude;
-        }
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      let lat = 0;
+      let lon = 0;
+      if (status === 'granted') {
+        const location = await Location.getCurrentPositionAsync({});
+        lat = location.coords.latitude;
+        lon = location.coords.longitude;
+      }
 
-        const { data, error } = await client.functions.invoke('generate-outfit', {
-          body: { userId, lat, lon, closetItems: items, count, vacationContext },
-        });
+      const { data, error } = await client.functions.invoke('generate-outfit', {
+        body: { userId, lat, lon, closetItems: items, count, vacationContext },
+      });
 
-        if (error) throw error;
-        if (data && data.outfits) {
-          setDailyOutfits([...dailyOutfits, ...data.outfits]);
-        }
+      if (error) throw error;
+      if (data && data.outfits) {
+        setDailyOutfits([...useAppStore.getState().dailyOutfits, ...data.outfits]);
       }
     } catch (e: any) {
-      console.error(e);
-      setErrorMsg(e.message || 'Failed to generate outfits');
+      console.error('[Stylist] fetchClosetAndGenerate error:', e);
+      const msg = e.message || 'Failed to generate outfits';
+      setErrorMsg(msg);
+      // Always show an alert — setErrorMsg is invisible when cards already exist
+      Alert.alert('Error', msg);
     } finally {
       setLoading(false);
       setGeneratingMore(false);
@@ -249,9 +250,13 @@ export default function DailyStylistScreen() {
               <TouchableOpacity style={styles.modalCancel} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setVacationModalVisible(false); }}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.modalSubmit} 
+              <TouchableOpacity
+                style={styles.modalSubmit}
                 onPress={() => {
+                  if (!vacationPrompt.trim()) {
+                    Alert.alert('Missing info', 'Please describe where you are going.');
+                    return;
+                  }
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                   setVacationModalVisible(false);
                   setDailyOutfits([]);

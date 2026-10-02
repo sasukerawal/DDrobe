@@ -90,9 +90,15 @@
 7. **EAS Build for AdMob** — `npx eas build --profile development --platform ios` (or android). Google AdMob won't initialize in Expo Go — requires native build.
 8. **Regenerate typed routes** — run `npx expo start` once; this regenerates `.expo/types/router.d.ts` and fixes the `as never` cast in `explore.tsx`.
 
-## Remaining Code Gaps (not yet implemented)
-- Local background removal (Apple Vision API) — architecture.md lists this as the goal but it's not yet wired up.
-- Apple/Google SSO buttons on sign-in/sign-up screens.
-- Push notification setup (Expo push token → `users.push_token` column).
-- 6-Month Resell Nudge feature (check `created_at` age, surface in-app prompt).
-- `useAuthStore.dbUser` never populated after sync — read the upserted row back into Zustand.
+## Remaining Code Gaps
+- ✅ Apple/Google SSO buttons on sign-in/sign-up screens — implemented via `useSSO` from `@clerk/expo` (requires OAuth providers configured in Clerk Dashboard).
+- ✅ Push notification setup — `expo-notifications` installed; Expo push token requested on sign-in and saved to `users.push_token` via Supabase.
+- ✅ 6-Month Resell Nudge — purple banner in My Closet screen counts items older than 6 months and alerts user to resell options.
+- ✅ `useAuthStore.dbUser` populated — `syncUserToSupabase` now returns the upserted `User` row; `_layout.tsx` calls `setDbUser()` after sync.
+- Local background removal (Apple Vision API) — architecture.md lists this as the goal but requires a native Expo module; deferred to post-launch native build.
+
+## SSO Configuration Required
+To enable Google/Apple sign-in, the user must configure OAuth providers in Clerk Dashboard:
+- **Google**: Clerk Dashboard → User & Authentication → Social Connections → Google → enable + add Client ID/Secret
+- **Apple**: Clerk Dashboard → User & Authentication → Social Connections → Apple → enable + add credentials
+- **Redirect URLs**: Add `exp://` scheme URL for Expo Go testing
