@@ -20,7 +20,8 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignUpScreen() {
-  const { signUp, setActive, isLoaded } = useSignUp();
+  const { signUp, fetchStatus } = useSignUp();
+  const isLoaded = fetchStatus === 'idle';
   const { startSSOFlow } = useSSO();
   const router = useRouter();
 
@@ -71,22 +72,31 @@ export default function SignUpScreen() {
     setLoading(true);
     setError(null);
 
-    try {
-      await signUp.create({ username, emailAddress: email, password });
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      setPendingVerification(true);
-    } catch (err: unknown) {
-      console.error('[SignUp] create error:', err);
-      const clerkErr = err as any;
+    const { error: createError } = await signUp.create({ username, emailAddress: email, password });
+    if (createError) {
+      const clerkErr = createError as any;
       const message =
-        clerkErr?.errors?.[0]?.longMessage ??
-        clerkErr?.errors?.[0]?.message ??
-        (err instanceof Error ? err.message : 'Sign up failed. Please try again.');
+        clerkErr?.longMessage ??
+        clerkErr?.message ??
+        'Sign up failed. Please try again.';
       setError(message);
       Alert.alert('Sign up failed', message);
-    } finally {
       setLoading(false);
+      return;
     }
+
+    const { error: sendError } = await signUp.verifications.sendEmailCode();
+    if (sendError) {
+      const clerkErr = sendError as any;
+      const message = clerkErr?.longMessage ?? clerkErr?.message ?? 'Failed to send verification code.';
+      setError(message);
+      Alert.alert('Error', message);
+      setLoading(false);
+      return;
+    }
+
+    setPendingVerification(true);
+    setLoading(false);
   };
 
   const handleVerify = async () => {
@@ -95,21 +105,26 @@ export default function SignUpScreen() {
     setLoading(true);
     setError(null);
 
-    try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
-      await setActive({ session: result.createdSessionId });
-      router.replace('/');
-    } catch (err: unknown) {
-      console.error('[SignUp] verify error:', err);
-      const clerkErr = err as any;
+    const { error: verifyError } = await signUp.verifications.verifyEmailCode({ code });
+    if (verifyError) {
+      const clerkErr = verifyError as any;
       const message =
-        clerkErr?.errors?.[0]?.longMessage ??
-        clerkErr?.errors?.[0]?.message ??
-        (err instanceof Error ? err.message : 'Verification failed. Check your code.');
+        clerkErr?.longMessage ??
+        clerkErr?.message ??
+        'Verification failed. Check your code.';
       setError(message);
-    } finally {
       setLoading(false);
+      return;
     }
+
+    const { error: finalizeError } = await signUp.finalize();
+    if (finalizeError) {
+      const clerkErr = finalizeError as any;
+      setError(clerkErr?.longMessage ?? clerkErr?.message ?? 'Failed to complete sign-up.');
+    } else {
+      router.replace('/');
+    }
+    setLoading(false);
   };
 
   if (pendingVerification) {

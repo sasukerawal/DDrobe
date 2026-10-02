@@ -20,7 +20,8 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInScreen() {
-  const { signIn, setActive, isLoaded } = useSignIn();
+  const { signIn, fetchStatus } = useSignIn();
+  const isLoaded = fetchStatus === 'idle';
   const { startSSOFlow } = useSSO();
   const router = useRouter();
 
@@ -61,22 +62,29 @@ export default function SignInScreen() {
     setLoading(true);
     setError(null);
 
-    try {
-      const result = await signIn.create({ identifier: email, password });
-      await setActive({ session: result.createdSessionId });
-      router.replace('/');
-    } catch (err: unknown) {
-      console.error('[SignIn] error:', err);
-      const clerkErr = err as any;
+    const { error } = await signIn.password({ identifier: email, password });
+    if (error) {
+      const clerkErr = error as any;
       const message =
-        clerkErr?.errors?.[0]?.longMessage ??
-        clerkErr?.errors?.[0]?.message ??
-        (err instanceof Error ? err.message : 'Sign in failed. Please try again.');
+        clerkErr?.longMessage ??
+        clerkErr?.message ??
+        'Sign in failed. Please try again.';
       setError(message);
       Alert.alert('Sign in failed', message);
-    } finally {
       setLoading(false);
+      return;
     }
+
+    const { error: finalizeError } = await signIn.finalize();
+    if (finalizeError) {
+      const clerkErr = finalizeError as any;
+      const message = clerkErr?.longMessage ?? clerkErr?.message ?? 'Failed to complete sign-in.';
+      setError(message);
+      Alert.alert('Sign in failed', message);
+    } else {
+      router.replace('/');
+    }
+    setLoading(false);
   };
 
   return (
