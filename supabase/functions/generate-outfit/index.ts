@@ -1,4 +1,4 @@
-// Supabase Edge Function: generate-outfit
+// Supabase Edge Function: generate-outfit — v2
 // Receives user latitude, longitude, and closet_items.
 // Fetches weather from OpenWeatherMap, then calls Gemini API to generate 3 outfits.
 
