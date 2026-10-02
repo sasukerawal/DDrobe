@@ -173,6 +173,8 @@ export default function SignUpScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* Required by Clerk Smart CAPTCHA on web; harmless on native */}
+      <View nativeID="clerk-captcha" style={styles.captchaAnchor} />
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.headerContainer}>
           <Text style={styles.title}>Build your wardrobe</Text>
@@ -364,4 +366,5 @@ const styles = StyleSheet.create({
   },
   footerText: { color: Colors.dark.textSecondary, fontSize: 14 },
   footerLink: { color: Colors.primaryLight, fontWeight: '600', fontSize: 14 },
+  captchaAnchor: { height: 0, overflow: 'hidden' },
 });

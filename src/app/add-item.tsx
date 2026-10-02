@@ -40,12 +40,14 @@ export default function AddItemScreen() {
         <Text style={styles.permissionSub}>
           DDrobe needs camera access to photograph your clothing items.
         </Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
-          <Text style={styles.primaryButtonText}>Grant Permission</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.ghostButton} onPress={() => router.back()}>
-          <Text style={styles.ghostButtonText}>Go Back</Text>
-        </TouchableOpacity>
+        <View style={styles.permissionButtons}>
+          <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
+            <Text style={styles.primaryButtonText}>Grant Permission</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.ghostButton} onPress={() => router.back()}>
+            <Text style={styles.ghostButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
@@ -67,7 +69,7 @@ export default function AddItemScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     try {
-      const token = await getToken({ template: 'supabase' });
+      const token = await getToken();
       if (!token) throw new Error('Not authenticated');
 
       // Resize to 512×512 and convert to base64 (Zero-Cost AI Tagging — architecture.md)
@@ -179,6 +181,10 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  permissionButtons: {
+    width: '100%',
+    gap: Spacing.two,
   },
 
   // Camera screen

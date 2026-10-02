@@ -29,7 +29,7 @@ export default function ClosetScreen() {
     if (!userId || (!force && closetItems.length > 0)) return;
     setLoading(true);
     try {
-      const token = await getToken({ template: 'supabase' });
+      const token = await getToken();
       if (!token) throw new Error('No auth token');
       const client = createAuthenticatedClient(token);
 
@@ -61,7 +61,7 @@ export default function ClosetScreen() {
     setClosetItems(closetItems.map(i => (i.id === item.id ? { ...i, is_in_wash: newStatus } : i)));
 
     try {
-      const token = await getToken({ template: 'supabase' });
+      const token = await getToken();
       if (!token) throw new Error('No auth token');
       const client = createAuthenticatedClient(token);
 

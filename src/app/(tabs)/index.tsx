@@ -70,7 +70,7 @@ export default function DailyStylistScreen() {
     if (!userId) return;
     setLoading(true);
     try {
-      const token = await getToken({ template: 'supabase' });
+      const token = await getToken();
       if (!token) throw new Error('No auth token');
       const client = createAuthenticatedClient(token);
 
@@ -146,7 +146,7 @@ export default function DailyStylistScreen() {
             
             const caption = `Stylist recommended: ${outfit.style} look!`;
             
-            const token = await getToken({ template: 'supabase' });
+            const token = await getToken();
             if (!token) throw new Error('Not authenticated');
             const client = createAuthenticatedClient(token);
             const { data, error } = await client.functions.invoke('create-post', {
@@ -179,9 +179,18 @@ export default function DailyStylistScreen() {
 
   if (errorMsg && dailyOutfits.length === 0) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{errorMsg}</Text>
-      </View>
+      <SafeAreaView style={styles.center}>
+        <Text style={styles.errorIcon}>👗</Text>
+        <Text style={styles.errorTitle}>Couldn't load your outfits</Text>
+        <Text style={styles.errorText}>
+          {errorMsg.includes('closet is empty')
+            ? 'Add some clothing items to your closet first, then come back!'
+            : 'Something went wrong. Check your connection and try again.'}
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => fetchClosetAndGenerate()}>
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
     );
   }
 
@@ -314,7 +323,7 @@ function SwipeableCard({ outfit, isFirst, onSwipe, onPost }: SwipeableCardProps)
   }));
 
   return (
-    <View style={styles.cardWrapper} pointerEvents={isFirst ? 'auto' : 'none'}>
+    <View style={[styles.cardWrapper, { pointerEvents: isFirst ? 'auto' : 'none' }]}>
       {isFirst ? (
         <GestureDetector gesture={pan}>
           <Animated.View style={[styles.card, rStyle]}>
@@ -405,10 +414,34 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 16,
   },
-  errorText: {
-    color: Colors.danger,
-    fontSize: 16,
+  errorIcon: {
+    fontSize: 48,
+    marginBottom: Spacing.two,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text,
     textAlign: 'center',
+    marginBottom: Spacing.two,
+  },
+  errorText: {
+    color: Colors.textSecondary,
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: Spacing.three,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: Spacing.two + 4,
+    paddingHorizontal: Spacing.five,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
   },
   emptyContainer: {
     alignItems: 'center',

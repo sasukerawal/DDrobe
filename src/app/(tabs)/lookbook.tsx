@@ -28,7 +28,7 @@ export default function LookbookScreen() {
   const fetchFeed = async () => {
     setLoading(true);
     try {
-      const token = await getToken({ template: 'supabase' });
+      const token = await getToken();
       if (!token) throw new Error('Not authenticated');
       const client = createAuthenticatedClient(token);
 
