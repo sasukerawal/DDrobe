@@ -17,6 +17,7 @@ interface ProcessImageBody {
 }
 
 interface AITagResult {
+  name?: string;
   category: string;
   color: string;
   pattern: string;
@@ -26,6 +27,7 @@ interface AITagResult {
 
 const TAG_PROMPT = `Analyze this clothing item. Return ONLY a JSON object with this structure:
 {
+  "name": "short descriptive name, 2-5 words, e.g. Black leather slip-on shoes",
   "category": "top" | "bottom" | "shoe" | "outerwear" | "accessory",
   "color": "string (primary color name)",
   "pattern": "string (e.g., solid, striped, floral, plaid, graphic)",
@@ -81,6 +83,7 @@ Deno.serve(async (req: Request) => {
       .insert({
         user_id: userId,
         image_url: urlData.publicUrl,
+        name: typeof tags.name === 'string' ? tags.name.trim().slice(0, 80) : '',
         category,
         color: tags.color ?? '',
         pattern: tags.pattern ?? '',

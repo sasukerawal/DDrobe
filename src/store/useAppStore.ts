@@ -7,6 +7,7 @@ interface AppState {
   setClosetItems: (items: ClosetItem[]) => void;
   addClosetItem: (item: ClosetItem) => void;
   updateClosetItem: (id: string, updates: Partial<ClosetItem>) => void;
+  removeClosetItem: (id: string) => void;
 
   // Daily Outfits (Swipe UI)
   dailyOutfits: GeneratedOutfit[];
@@ -30,6 +31,8 @@ export const useAppStore = create<AppState>((set) => ({
         item.id === id ? { ...item, ...updates } : item,
       ),
     })),
+  removeClosetItem: (id) =>
+    set((state) => ({ closetItems: state.closetItems.filter((item) => item.id !== id) })),
 
   dailyOutfits: [],
   setDailyOutfits: (outfits) => set({ dailyOutfits: outfits }),

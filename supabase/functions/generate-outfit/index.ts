@@ -13,6 +13,7 @@ const DAILY_LIMIT = 10;
 
 interface ClosetItem {
   id: string;
+  name?: string;
   category: string;
   color: string;
   pattern: string;
@@ -94,7 +95,7 @@ Deno.serve(async (req: Request) => {
       supabase.from('users').select('daily_generations_used, style_preferences').eq('id', userId).single(),
       supabase
         .from('closet_items')
-        .select('id, category, color, pattern, season, formality, is_in_wash, image_url, user_id, created_at')
+        .select('id, name, category, color, pattern, season, formality, is_in_wash, image_url, user_id, created_at')
         .eq('user_id', userId),
       supabase
         .from('outfits_history')
@@ -147,8 +148,8 @@ Generate exactly ${count} distinct outfit recommendations for today, each with a
     systemPrompt += `\n\nReturn ONLY a JSON array of exactly ${count} objects:
 [{ "style": "Casual", "description": "One or two sentences on why it works today.", "topId": "...", "bottomId": "...", "shoeId": "...", "accessoryId": "... or null" }]`;
 
-    const compactItems = availableItems.map(({ id, category, color, pattern, season, formality }: ClosetItem) =>
-      ({ id, category, color, pattern, season, formality }));
+    const compactItems = availableItems.map(({ id, name, category, color, pattern, season, formality }: ClosetItem) =>
+      ({ id, name, category, color, pattern, season, formality }));
 
     const result = await callGeminiJson<unknown>({
       system_instruction: { parts: [{ text: systemPrompt }] },

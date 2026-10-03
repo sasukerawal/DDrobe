@@ -205,8 +205,8 @@ export default function ClosetScreen() {
     if (searchText.trim()) {
       const q = searchText.toLowerCase();
       items = items.filter(item =>
-        item.category?.toLowerCase().includes(q) ||
-        item.color?.toLowerCase().includes(q),
+        [item.name, item.brand, item.category, item.color, item.pattern]
+          .some(field => field?.toLowerCase().includes(q)),
       );
     }
 
@@ -217,7 +217,7 @@ export default function ClosetScreen() {
         );
       case 'az':
         return [...items].sort((a, b) =>
-          (a.category || '').localeCompare(b.category || ''),
+          (a.name || a.category || '').localeCompare(b.name || b.category || ''),
         );
       default:
         return items;
@@ -297,7 +297,7 @@ export default function ClosetScreen() {
             style={[styles.searchInput, { color: colors.text }]}
             value={searchText}
             onChangeText={setSearchText}
-            placeholder="Search by category, color…"
+            placeholder="Search name, brand, colour…"
             placeholderTextColor={colors.textTertiary}
             autoFocus
             returnKeyType="search"
@@ -394,8 +394,10 @@ export default function ClosetScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.gridItem}
+              onPress={() => router.push(`/item/${item.id}` as never)}
               onLongPress={() => toggleWash(item)}
               activeOpacity={0.88}
+              accessibilityLabel={`${item.name || item.category}. Long-press to toggle laundry.`}
             >
               <Image
                 source={item.image_url}
@@ -409,7 +411,7 @@ export default function ClosetScreen() {
                 </View>
               )}
               <View style={styles.itemCategoryTag}>
-                <Text style={styles.itemCategoryText}>{item.category}</Text>
+                <Text style={styles.itemCategoryText} numberOfLines={1}>{item.name || item.category}</Text>
               </View>
             </TouchableOpacity>
           )}
@@ -582,17 +584,16 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     position: 'absolute',
     bottom: 8,
     left: 8,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   itemCategoryText: {
     color: '#FFFFFF',
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '600',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
   },
 
   // ── Loading / Empty ──

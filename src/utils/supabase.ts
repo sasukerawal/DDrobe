@@ -18,3 +18,21 @@ export function createAuthenticatedClient(token: string) {
     },
   });
 }
+
+// Calls an Edge Function and throws an Error carrying the function's own message on failure.
+export async function invokeFunction<T>(
+  client: ReturnType<typeof createAuthenticatedClient>,
+  name: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const { data, error } = await client.functions.invoke(name, { body });
+  if (error) {
+    let message = error.message ?? `${name} failed`;
+    try {
+      const detail = await (error as any).context?.json?.();
+      message = detail?.error ?? detail?.message ?? message;
+    } catch {}
+    throw new Error(message);
+  }
+  return data as T;
+}

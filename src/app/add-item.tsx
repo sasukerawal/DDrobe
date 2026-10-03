@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Platform,
+  FlatList,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
@@ -18,10 +18,20 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
 import { processImageForUpload } from '@/utils/imageProcessing';
-import { createAuthenticatedClient } from '@/utils/supabase';
+import { createAuthenticatedClient, invokeFunction } from '@/utils/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { Colors, Spacing, Radius } from '@/constants/theme';
 import type { ClosetItem } from '@/types';
+
+// Free-tier Gemini limits make very large batches slow; keep each run manageable.
+const MAX_BATCH = 15;
+
+interface BatchEntry {
+  uri: string;
+  status: 'waiting' | 'working' | 'done' | 'failed';
+  name?: string;
+  error?: string;
+}
 
 export default function AddItemScreen() {
   const router = useRouter();
@@ -32,8 +42,42 @@ export default function AddItemScreen() {
   const [uploading, setUploading] = useState(false);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [batch, setBatch] = useState<BatchEntry[] | null>(null);
+  const [batchRunning, setBatchRunning] = useState(false);
 
   const cameraRef = useRef<CameraView>(null);
+  const stopBatchRef = useRef(false);
+
+  // Background removal and tagging for one photo; returns the saved item.
+  const uploadOne = async (uri: string): Promise<ClosetItem> => {
+    const token = await getToken();
+    if (!token) throw new Error('Not authenticated');
+    const imageBase64 = await processImageForUpload(uri, { removeBackground: true });
+    const client = createAuthenticatedClient(token);
+    const data = await invokeFunction<{ item?: ClosetItem }>(client, 'process-image', { imageBase64 });
+    if (!data?.item) throw new Error('No item returned from AI tagging service.');
+    addClosetItem(data.item);
+    return data.item;
+  };
+
+  const runBatch = async (entries: BatchEntry[]) => {
+    stopBatchRef.current = false;
+    setBatchRunning(true);
+    for (let i = 0; i < entries.length; i++) {
+      if (stopBatchRef.current) break;
+      if (entries[i].status === 'done') continue;
+      setBatch(prev => prev && prev.map((e, j) => (j === i ? { ...e, status: 'working', error: undefined } : e)));
+      try {
+        const item = await uploadOne(entries[i].uri);
+        setBatch(prev => prev && prev.map((e, j) => (j === i ? { ...e, status: 'done', name: item.name || item.category } : e)));
+      } catch (err) {
+        const error = err instanceof Error ? err.message : 'Failed';
+        setBatch(prev => prev && prev.map((e, j) => (j === i ? { ...e, status: 'failed', error } : e)));
+      }
+    }
+    setBatchRunning(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
 
   const handleUpload = async (uri: string) => {
     if (!userId) return;
@@ -41,31 +85,12 @@ export default function AddItemScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     try {
-      const token = await getToken();
-      if (!token) throw new Error('Not authenticated');
-
-      const imageBase64 = await processImageForUpload(uri, { removeBackground: true });
-      const client = createAuthenticatedClient(token);
-
-      const { data, error } = await client.functions.invoke('process-image', {
-        body: { imageBase64 },
-      });
-
-      if (error) {
-        let msg = error.message ?? 'AI tagging failed';
-        try {
-          const detail = await (error as any).context?.json?.();
-          msg = detail?.error ?? detail?.message ?? msg;
-        } catch {}
-        throw new Error(msg);
-      }
-      if (!data?.item) throw new Error('No item returned from AI tagging service.');
-
-      addClosetItem(data.item as ClosetItem);
+      const item = await uploadOne(uri);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      Alert.alert('Item Added!', 'Your item has been tagged and added to your closet.', [
-        { text: 'Add Another', onPress: () => setCapturedUri(null) },
+      Alert.alert('Item added', `${item.name || 'Your item'} is in your wardrobe.`, [
+        { text: 'Add another', onPress: () => setCapturedUri(null) },
+        { text: 'Edit details', onPress: () => router.replace(`/item/${item.id}` as never) },
         { text: 'Done', onPress: () => router.back() },
       ]);
     } catch (e: unknown) {
@@ -96,14 +121,83 @@ export default function AddItemScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [3, 4],
+      allowsMultipleSelection: true,
+      selectionLimit: MAX_BATCH,
+      orderedSelection: true,
       quality: 0.85,
     });
-    if (!result.canceled && result.assets[0]) {
+    if (result.canceled || result.assets.length === 0) return;
+    if (result.assets.length === 1) {
       setCapturedUri(result.assets[0].uri);
+      return;
     }
+    const entries: BatchEntry[] = result.assets.map(a => ({ uri: a.uri, status: 'waiting' }));
+    setBatch(entries);
+    runBatch(entries);
   };
+
+  // Several photos picked from the gallery
+  if (batch) {
+    const done = batch.filter(e => e.status === 'done').length;
+    const failed = batch.filter(e => e.status === 'failed').length;
+    const finished = !batchRunning;
+    return (
+      <SafeAreaView style={styles.batchContainer} edges={['top', 'bottom']}>
+        <View style={styles.batchHeader}>
+          <Text style={styles.batchTitle}>
+            {finished ? `Added ${done} of ${batch.length}` : `Adding ${Math.min(done + failed + 1, batch.length)} of ${batch.length}`}
+          </Text>
+          <Text style={styles.batchSubtitle}>
+            {finished
+              ? failed > 0 ? `${failed} couldn't be added. You can retry them.` : 'All items are in your wardrobe.'
+              : 'Removing backgrounds and tagging. Keep the app open.'}
+          </Text>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${((done + failed) / batch.length) * 100}%` }]} />
+          </View>
+        </View>
+
+        <FlatList
+          data={batch}
+          keyExtractor={(e, i) => `${i}-${e.uri}`}
+          contentContainerStyle={styles.batchList}
+          renderItem={({ item: entry }) => (
+            <View style={styles.batchRow}>
+              <Image source={{ uri: entry.uri }} style={styles.batchThumb} contentFit="cover" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.batchRowTitle} numberOfLines={1}>
+                  {entry.status === 'done' ? entry.name : entry.status === 'working' ? 'Working on it…' : entry.status === 'failed' ? 'Not added' : 'Waiting'}
+                </Text>
+                {entry.error ? <Text style={styles.batchRowError} numberOfLines={2}>{entry.error}</Text> : null}
+              </View>
+              {entry.status === 'working' && <ActivityIndicator color={Colors.accent} />}
+              {entry.status === 'done' && <Ionicons name="checkmark-circle" size={22} color={Colors.success} />}
+              {entry.status === 'failed' && <Ionicons name="alert-circle" size={22} color={Colors.danger} />}
+            </View>
+          )}
+        />
+
+        <View style={styles.batchActions}>
+          {finished ? (
+            <>
+              {failed > 0 && (
+                <TouchableOpacity style={styles.batchGhost} onPress={() => runBatch(batch)}>
+                  <Text style={styles.batchGhostText}>Retry failed</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.primaryButton} onPress={() => router.back()}>
+                <Text style={styles.primaryButtonText}>Done</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity style={styles.batchGhost} onPress={() => { stopBatchRef.current = true; }}>
+              <Text style={styles.batchGhostText}>Stop after this one</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // Permission not yet determined
   if (!permission) return null;
@@ -421,14 +515,97 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: Radius.button,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: 'rgba(255,255,255,0.35)',
     paddingVertical: Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 52,
   },
   ghostButtonText: {
-    color: Colors.primary,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+
+  // ── Batch add ──
+  batchContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  batchHeader: {
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.four,
+    paddingBottom: Spacing.three,
+    gap: 6,
+  },
+  batchTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.text,
+    letterSpacing: -0.4,
+  },
+  batchSubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+    marginTop: Spacing.two,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: Colors.accent,
+  },
+  batchList: {
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.four,
+    gap: 10,
+  },
+  batchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.card,
+    padding: 10,
+  },
+  batchThumb: {
+    width: 52,
+    height: 52,
+    borderRadius: Radius.small,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  batchRowTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  batchRowError: {
+    fontSize: 12,
+    color: Colors.danger,
+    marginTop: 2,
+  },
+  batchActions: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    padding: Spacing.four,
+    paddingTop: Spacing.two,
+  },
+  batchGhost: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: Radius.button,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  batchGhostText: {
+    color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 16,
   },

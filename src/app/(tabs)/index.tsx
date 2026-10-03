@@ -28,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { createAuthenticatedClient } from '@/utils/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { useAuthStore } from '@/store/useAuthStore';
+import { logWear, todayISO } from '@/utils/wearLog';
 import { Colors, Spacing, Radius } from '@/constants/theme';
 import { useThemeColors, type ThemeColors } from '@/hooks/useThemeColors';
 import type { GeneratedOutfit } from '@/types';
@@ -198,9 +199,15 @@ export default function DailyStylistScreen() {
         shoe_id: outfit.shoe?.id ?? null,
         accessory_id: outfit.accessory?.id ?? null,
         weather_context: weatherRef.current ?? {},
-        date_worn: new Date().toISOString().split('T')[0],
+        date_worn: todayISO(),
         rating: direction === 'right' ? 5 : 1,
       });
+      if (direction === 'right' && userId) {
+        const itemIds = [outfit.top, outfit.bottom, outfit.shoe, outfit.accessory]
+          .filter((i): i is NonNullable<typeof i> => Boolean(i))
+          .map((i) => i.id);
+        await logWear(client, userId, itemIds);
+      }
     } catch (e) {
       console.warn('[Stylist] outfits_history insert failed:', e);
     }

@@ -15,12 +15,25 @@ export interface ClosetItem {
   id: string; // uuid
   user_id: string;
   image_url: string;
+  name: string;
   category: 'top' | 'bottom' | 'shoe' | 'outerwear' | 'accessory';
   color: string;
   pattern: string;
   season: Array<'spring' | 'summer' | 'autumn' | 'winter'>;
   formality: 'casual' | 'business_casual' | 'formal';
+  brand: string;
+  size: string;
+  price: number | null;
+  notes: string;
   is_in_wash: boolean;
+  created_at: string;
+}
+
+export interface WearLogEntry {
+  id: string;
+  user_id: string;
+  item_id: string;
+  worn_on: string; // ISO date
   created_at: string;
 }
 
