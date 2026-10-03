@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { fetchFeed as fetchLookbook, setLiked, type FeedPost } from '@/utils/lookbook';
 import {
   Alert,
   StyleSheet,
@@ -22,15 +24,8 @@ import { createAuthenticatedClient } from '@/utils/supabase';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors, type ThemeColors } from '@/hooks/useThemeColors';
 
-interface FeedPost {
-  id: string;
-  user_id: string;
-  image_url: string;
-  caption: string;
-  created_at: string;
-}
-
 export default function LookbookScreen() {
+  const router = useRouter();
   const { getToken, userId } = useAuth();
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,11 +37,15 @@ export default function LookbookScreen() {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  useEffect(() => {
-    fetchFeed();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchFeed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
   const fetchFeed = async () => {
+    if (!userId) return;
     setLoading(true);
     setErrorMsg(null);
 
@@ -55,18 +54,7 @@ export default function LookbookScreen() {
         if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
         const token = await getToken({ skipCache: attempt > 0 });
         if (!token) throw new Error('Not authenticated');
-        const client = createAuthenticatedClient(token);
-        const { data, error } = await client
-          .from('feed_posts')
-          .select('*')
-          .eq('moderation_status', 'approved')
-          .order('created_at', { ascending: false });
-
-        if (error) {
-          if ((error as any).code === 'PGRST303' && attempt === 0) continue;
-          throw error;
-        }
-        setPosts(data || []);
+        setPosts(await fetchLookbook(createAuthenticatedClient(token), userId));
         break;
       } catch (e: unknown) {
         if ((e as any)?.code === 'PGRST303' && attempt === 0) continue;
@@ -139,32 +127,47 @@ export default function LookbookScreen() {
     }
   };
 
+  const toggleLike = async (post: FeedPost) => {
+    if (!userId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const like = !post.liked;
+    const apply = (liked: boolean) =>
+      setPosts(list => list.map(p => (p.id === post.id
+        ? { ...p, liked, likeCount: Math.max(0, p.likeCount + (liked === post.liked ? 0 : liked ? 1 : -1)) }
+        : p)));
+    apply(like);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not authenticated');
+      await setLiked(createAuthenticatedClient(token), userId, post.id, like);
+    } catch {
+      apply(post.liked);
+    }
+  };
+
+  const openPost = (post: FeedPost) => router.push(`/post/${post.id}` as never);
+
   const renderPost = ({ item }: { item: FeedPost }) => (
     <View style={styles.postCard}>
-      <Image source={item.image_url} style={styles.postImage} contentFit="cover" />
-      {item.caption ? (
-        <View style={styles.captionBlock}>
-          <Text style={styles.captionText} numberOfLines={2}>{item.caption}</Text>
-        </View>
-      ) : null}
+      <TouchableOpacity activeOpacity={0.9} onPress={() => openPost(item)}>
+        <Image source={item.image_url} style={styles.postImage} contentFit="cover" />
+      </TouchableOpacity>
+      <View style={styles.captionBlock}>
+        <Text style={styles.authorText} numberOfLines={1}>{item.author}</Text>
+        {item.caption ? <Text style={styles.captionText} numberOfLines={2}>{item.caption}</Text> : null}
+      </View>
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={styles.actionBtn}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            Alert.alert('Coming soon', 'Likes are coming in the next update!');
-          }}
+          onPress={() => toggleLike(item)}
+          accessibilityLabel={item.liked ? 'Unlike' : 'Like'}
         >
-          <Ionicons name="heart-outline" size={16} color={colors.textSecondary} />
+          <Ionicons name={item.liked ? 'heart' : 'heart-outline'} size={18} color={item.liked ? Colors.danger : colors.textSecondary} />
+          {item.likeCount > 0 ? <Text style={styles.actionCount}>{item.likeCount}</Text> : null}
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            Alert.alert('Coming soon', 'Comments are coming in the next update!');
-          }}
-        >
-          <Ionicons name="chatbubble-outline" size={16} color={colors.textSecondary} />
+        <TouchableOpacity style={styles.actionBtn} onPress={() => openPost(item)} accessibilityLabel="Comments">
+          <Ionicons name="chatbubble-outline" size={17} color={colors.textSecondary} />
+          {item.commentCount > 0 ? <Text style={styles.actionCount}>{item.commentCount}</Text> : null}
         </TouchableOpacity>
       </View>
     </View>
@@ -414,15 +417,30 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.textSecondary,
     lineHeight: 17,
   },
+  authorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: c.text,
+    marginBottom: 2,
+  },
   actionsRow: {
     flexDirection: 'row',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingBottom: 10,
-    paddingTop: 4,
+    paddingHorizontal: 4,
+    paddingBottom: 4,
   },
   actionBtn: {
-    padding: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 40,
+    paddingHorizontal: 6,
+  },
+  actionCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: c.textSecondary,
+    fontVariant: ['tabular-nums'],
   },
 
   // ── Modal ──

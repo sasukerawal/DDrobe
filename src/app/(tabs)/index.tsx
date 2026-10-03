@@ -333,9 +333,21 @@ export default function DailyStylistScreen() {
           style={styles.moreBtn}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/chat' as never);
+          }}
+          hitSlop={8}
+          accessibilityLabel="Ask your stylist"
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.text} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.moreBtn}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setMenuVisible(true);
           }}
           hitSlop={8}
+          accessibilityLabel="More options"
         >
           <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
         </TouchableOpacity>

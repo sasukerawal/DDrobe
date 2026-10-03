@@ -7,12 +7,13 @@ export async function syncUserToSupabase(
   token: string,
   userId: string,
   email: string,
+  displayName: string,
 ): Promise<User | null> {
   const supabase = createAuthenticatedClient(token);
 
   const { error: upsertError } = await supabase
     .from('users')
-    .upsert({ id: userId, email }, { onConflict: 'id' });
+    .upsert({ id: userId, email, display_name: displayName.slice(0, 40) }, { onConflict: 'id' });
 
   if (upsertError) {
     console.error('[userSync] Failed to sync user:', upsertError.message);

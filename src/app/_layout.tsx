@@ -72,8 +72,12 @@ function InitialLayout() {
         const token = await getToken();
         if (!token) return;
         const email = user.primaryEmailAddress?.emailAddress ?? '';
-        const dbUser = await syncUserToSupabase(token, userId, email);
-        if (dbUser) setDbUser(dbUser);
+        const displayName = user.username || user.firstName || email.split('@')[0] || '';
+        const dbUser = await syncUserToSupabase(token, userId, email, displayName);
+        if (dbUser) {
+          setDbUser(dbUser);
+          if (!dbUser.style_preferences?.onboarded) router.push('/onboarding' as never);
+        }
 
         // Register push token only in dev/prod builds — not in Expo Go (removed SDK 53+)
         if (Platform.OS !== 'web' && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient) {
@@ -124,6 +128,9 @@ function InitialLayout() {
         <Stack.Screen name="trips/index" />
         <Stack.Screen name="trips/[id]" />
         <Stack.Screen name="wishlist" />
+        <Stack.Screen name="onboarding" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
+        <Stack.Screen name="post/[id]" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="chat" />
         <Stack.Screen name="change-password" options={{ presentation: 'modal' }} />
         <Stack.Screen name="email-import" options={{ presentation: 'fullScreenModal', headerShown: false }} />
         <Stack.Screen name="sso-callback" options={{ headerShown: false }} />

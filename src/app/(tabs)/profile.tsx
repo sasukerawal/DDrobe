@@ -247,6 +247,10 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          <TouchableOpacity onPress={() => router.push('/onboarding' as never)} style={styles.quizLink}>
+            <Ionicons name="sparkles-outline" size={15} color={Colors.accent} />
+            <Text style={styles.quizLinkText}>Retake style quiz</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Insights ── */}
@@ -596,6 +600,17 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   formalityChipTextActive: {
     color: c.background,
+  },
+  quizLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
+  },
+  quizLinkText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.accent,
   },
 
   // ── Row group ──

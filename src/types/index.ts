@@ -5,10 +5,20 @@ export interface User {
   id: string; // uuid
   email: string;
   push_token: string | null;
-  style_preferences: Record<string, unknown>;
+  style_preferences: StylePreferences;
+  display_name: string;
   daily_generations_used: number;
   ad_credits: number;
   created_at: string;
+}
+
+export interface StylePreferences {
+  onboarded?: boolean;
+  preferredFormality?: 'casual' | 'business_casual' | 'formal';
+  vibes?: string[];
+  favoriteColors?: string[];
+  fit?: 'relaxed' | 'regular' | 'fitted';
+  [key: string]: unknown;
 }
 
 export interface ClosetItem {

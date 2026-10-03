@@ -138,6 +138,16 @@ Generate exactly ${count} distinct outfit recommendations for today, each with a
     if (preferredFormality) {
       systemPrompt += `\n- The user prefers ${String(preferredFormality).replace('_', ' ')} outfits; make ${count > 1 ? 'at least two of the suggestions' : 'the suggestion'} match that.`;
     }
+    const prefs = userRes.data?.style_preferences ?? {};
+    if (Array.isArray(prefs.vibes) && prefs.vibes.length) {
+      systemPrompt += `\n- Their style: ${prefs.vibes.slice(0, 3).join(', ')}.`;
+    }
+    if (Array.isArray(prefs.favoriteColors) && prefs.favoriteColors.length) {
+      systemPrompt += `\n- Colours they love wearing: ${prefs.favoriteColors.slice(0, 4).join(', ')}.`;
+    }
+    if (typeof prefs.fit === 'string') {
+      systemPrompt += `\n- They prefer a ${prefs.fit} fit; mention it in the description when relevant.`;
+    }
     if (history) {
       systemPrompt += `\n- Past reactions (LOVED = wore it, PASSED = skipped). Favour combinations similar to loved ones and avoid passed combinations:\n${history}`;
     }
