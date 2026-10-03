@@ -29,6 +29,7 @@ import { createAuthenticatedClient } from '@/utils/supabase';
 import { useAppStore } from '@/store/useAppStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { logWear, todayISO } from '@/utils/wearLog';
+import { deleteOutfit, saveOutfit } from '@/utils/outfits';
 import { Colors, Spacing, Radius } from '@/constants/theme';
 import { useThemeColors, type ThemeColors } from '@/hooks/useThemeColors';
 import type { GeneratedOutfit } from '@/types';
@@ -213,6 +214,34 @@ export default function DailyStylistScreen() {
     }
   };
 
+  // Maps a suggestion's id to its saved_outfits id once the heart is tapped.
+  const [savedIds, setSavedIds] = useState<Record<string, string>>({});
+
+  const toggleSave = async (outfit: GeneratedOutfit) => {
+    if (!userId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const existing = savedIds[outfit.id];
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not signed in');
+      const client = createAuthenticatedClient(token);
+      if (existing) {
+        await deleteOutfit(client, existing);
+        setSavedIds(({ [outfit.id]: _, ...rest }) => rest);
+      } else {
+        const saved = await saveOutfit(client, userId, outfit, {
+          name: `${outfit.style} look`,
+          description: outfit.description,
+          source: 'ai',
+        });
+        setSavedIds((s) => ({ ...s, [outfit.id]: saved.id }));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (e) {
+      Alert.alert('Not saved', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+
   const postToLookbook = async (outfit: GeneratedOutfit) => {
     Alert.alert('Post to Lookbook', 'This will share your outfit to the community feed. Moderation applies.', [
       { text: 'Cancel', style: 'cancel' },
@@ -341,6 +370,8 @@ export default function DailyStylistScreen() {
               isFirst={isFirst}
               onSwipe={(dir) => onSwipe(dir, outfit)}
               onPost={() => postToLookbook(outfit)}
+              saved={Boolean(savedIds[outfit.id])}
+              onSave={() => toggleSave(outfit)}
             />
           );
         }).reverse()}
@@ -427,9 +458,11 @@ interface SwipeableCardProps {
   isFirst: boolean;
   onSwipe: (direction: 'left' | 'right') => void;
   onPost: () => void;
+  saved: boolean;
+  onSave: () => void;
 }
 
-function SwipeableCard({ outfit, isFirst, onSwipe, onPost }: SwipeableCardProps) {
+function SwipeableCard({ outfit, isFirst, onSwipe, onPost, saved, onSave }: SwipeableCardProps) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const translateX = useSharedValue(0);
@@ -482,19 +515,29 @@ function SwipeableCard({ outfit, isFirst, onSwipe, onPost }: SwipeableCardProps)
             <Animated.View style={[styles.swipeBadge, styles.swipeBadgePass, passOpacity]}>
               <Text style={styles.swipeBadgeText}>PASS</Text>
             </Animated.View>
-            <CardContent outfit={outfit} onPost={onPost} />
+            <CardContent outfit={outfit} onPost={onPost} saved={saved} onSave={onSave} />
           </Animated.View>
         </GestureDetector>
       ) : (
         <Animated.View style={styles.card}>
-          <CardContent outfit={outfit} onPost={onPost} />
+          <CardContent outfit={outfit} onPost={onPost} saved={saved} onSave={onSave} />
         </Animated.View>
       )}
     </View>
   );
 }
 
-function CardContent({ outfit, onPost }: { outfit: GeneratedOutfit; onPost: () => void }) {
+function CardContent({
+  outfit,
+  onPost,
+  saved,
+  onSave,
+}: {
+  outfit: GeneratedOutfit;
+  onPost: () => void;
+  saved: boolean;
+  onSave: () => void;
+}) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -517,9 +560,24 @@ function CardContent({ outfit, onPost }: { outfit: GeneratedOutfit; onPost: () =
           <Text style={styles.styleBadgeText}>{outfit.style.toUpperCase()}</Text>
         </View>
         {/* Share button overlay */}
-        <TouchableOpacity style={styles.shareButton} onPress={onPost} activeOpacity={0.8}>
-          <Ionicons name="arrow-up-circle" size={28} color="rgba(255,255,255,0.92)" />
-        </TouchableOpacity>
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.cardActionButton}
+            onPress={onSave}
+            activeOpacity={0.8}
+            accessibilityLabel={saved ? 'Remove from saved outfits' : 'Save outfit'}
+          >
+            <Ionicons name={saved ? 'heart' : 'heart-outline'} size={22} color={saved ? Colors.accent : '#FFFFFF'} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.cardActionButton}
+            onPress={onPost}
+            activeOpacity={0.8}
+            accessibilityLabel="Share to Lookbook"
+          >
+            <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Secondary items row */}
@@ -742,10 +800,20 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.4,
   },
-  shareButton: {
+  cardActions: {
     position: 'absolute',
     bottom: 8,
-    right: 12,
+    right: 8,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cardActionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   secondaryRow: {
     flexDirection: 'row',

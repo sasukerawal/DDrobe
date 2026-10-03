@@ -29,6 +29,30 @@ export interface ClosetItem {
   created_at: string;
 }
 
+export interface SavedOutfit {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string;
+  source: 'ai' | 'manual';
+  top_id: string;
+  bottom_id: string;
+  shoe_id: string;
+  accessory_id: string | null;
+  created_at: string;
+  top: ClosetItem;
+  bottom: ClosetItem;
+  shoe: ClosetItem;
+  accessory: ClosetItem | null;
+}
+
+export interface PlannedOutfit {
+  id: string;
+  outfit_id: string;
+  plan_date: string; // ISO date
+  outfit: SavedOutfit;
+}
+
 export interface WearLogEntry {
   id: string;
   user_id: string;
