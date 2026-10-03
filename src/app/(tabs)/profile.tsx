@@ -249,6 +249,19 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* ── Insights ── */}
+        <SectionHeader title="Insights" />
+        <View style={styles.rowGroup}>
+          <RowItem
+            icon="stats-chart-outline"
+            label="Wardrobe stats"
+            sublabel="Most worn, cost per wear, what to resell"
+            onPress={() => router.push('/stats' as never)}
+            showChevron
+            accent
+          />
+        </View>
+
         {/* ── Import ── */}
         <SectionHeader title="Import" />
         <View style={styles.rowGroup}>

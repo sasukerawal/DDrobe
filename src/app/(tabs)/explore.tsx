@@ -147,16 +147,11 @@ export default function ClosetScreen() {
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
         if (items.length > 0) {
-          const { data: historyData } = await client
-            .from('outfits_history')
-            .select('top_id, bottom_id, shoe_id, accessory_id, date_worn')
-            .gte('date_worn', sixMonthsAgo.toISOString().split('T')[0]);
-          const recentlyWornIds = new Set<string>();
-          for (const row of historyData ?? []) {
-            [row.top_id, row.bottom_id, row.shoe_id, row.accessory_id].forEach(id => {
-              if (id) recentlyWornIds.add(id);
-            });
-          }
+          const { data: wornData } = await client
+            .from('wear_log')
+            .select('item_id')
+            .gte('worn_on', sixMonthsAgo.toISOString().split('T')[0]);
+          const recentlyWornIds = new Set<string>((wornData ?? []).map(row => row.item_id));
           setResellCount(
             items.filter(i => new Date(i.created_at) < sixMonthsAgo && !recentlyWornIds.has(i.id)).length,
           );
@@ -329,17 +324,11 @@ export default function ClosetScreen() {
         <TouchableOpacity
           style={styles.nudgeBanner}
           activeOpacity={0.85}
-          onPress={() =>
-            Alert.alert(
-              'Time to Resell?',
-              `You have ${resellCount} item${resellCount > 1 ? 's' : ''} unworn for 6+ months. Consider listing on Depop, Poshmark, or Vinted.`,
-              [{ text: 'Got it', style: 'cancel' }],
-            )
-          }
+          onPress={() => router.push('/stats' as never)}
         >
           <Ionicons name="pricetag-outline" size={14} color={Colors.accent} />
           <Text style={styles.nudgeText}>
-            {resellCount} item{resellCount > 1 ? 's' : ''} unworn 6+ months — resell tips
+            {resellCount} item{resellCount > 1 ? 's' : ''} not worn in 6+ months
           </Text>
           <Ionicons name="chevron-forward" size={14} color={Colors.accent} />
         </TouchableOpacity>
