@@ -124,7 +124,7 @@ export default function EmailImportScreen() {
             let msg = error.message ?? 'Could not read email';
             try {
               const detail = await (error as any).context?.json?.();
-              if (detail?.error) msg = detail.error;
+              msg = detail?.error ?? detail?.message ?? msg;
             } catch {}
             throw new Error(msg);
           }
@@ -213,7 +213,7 @@ export default function EmailImportScreen() {
         let msg = error.message ?? 'Import failed';
         try {
           const detail = await (error as any).context?.json?.();
-          if (detail?.error) msg = detail.error;
+          msg = detail?.error ?? detail?.message ?? msg;
         } catch {}
         throw new Error(msg);
       }

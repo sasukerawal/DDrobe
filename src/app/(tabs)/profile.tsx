@@ -15,6 +15,7 @@ import { useAuth, useUser } from '@clerk/expo';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 
 import { useAuthStore } from '@/store/useAuthStore';
 import { useAppStore } from '@/store/useAppStore';
@@ -108,6 +109,10 @@ export default function ProfileScreen() {
       Alert.alert('Notifications', 'Push notifications are only supported on the mobile app.');
       return;
     }
+    if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
+      Alert.alert('Notifications', 'Push notifications work in the DDrobe development build, not in Expo Go.');
+      return;
+    }
     const Notifications = await import('expo-notifications');
     const { status } = await Notifications.getPermissionsAsync();
     if (status === 'granted') {
@@ -158,7 +163,7 @@ export default function ProfileScreen() {
                 let msg = error.message ?? 'Failed to delete account.';
                 try {
                   const detail = await (error as any).context?.json?.();
-                  if (detail?.error) msg = detail.error;
+                  msg = detail?.error ?? detail?.message ?? msg;
                 } catch {}
                 throw new Error(msg);
               }

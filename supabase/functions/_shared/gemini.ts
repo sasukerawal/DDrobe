@@ -1,11 +1,12 @@
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!;
 // Retries alternate models so a demand spike on one doesn't stall the request.
-const MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash'];
+const MODELS = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
 const modelUrl = (model: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
-const MAX_ATTEMPTS = 4;
+const MAX_ATTEMPTS = 6;
+const MIN_OUTPUT_TOKENS = 8192;
 
 export class GeminiError extends Error {
   constructor(message: string, public status: number) {
@@ -18,6 +19,14 @@ export async function callGeminiJson<T>(body: Record<string, unknown>): Promise<
   let lastStatus = 0;
   let lastMessage = '';
 
+  // Thinking models spend output tokens on reasoning before answering, so small caps
+  // truncate the JSON (gemini-3.5-flash used ~450 tokens thinking for one photo).
+  const config = (body.generationConfig ?? {}) as { maxOutputTokens?: number };
+  const requestBody = {
+    ...body,
+    generationConfig: { ...config, maxOutputTokens: Math.max(config.maxOutputTokens ?? 0, MIN_OUTPUT_TOKENS) },
+  };
+
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     if (attempt > 1) {
       const delay = 500 * 2 ** (attempt - 2) + Math.random() * 300;
@@ -28,7 +37,7 @@ export async function callGeminiJson<T>(body: Record<string, unknown>): Promise<
     const res = await fetch(modelUrl(model), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody),
     });
 
     if (res.ok) {
@@ -37,6 +46,12 @@ export async function callGeminiJson<T>(body: Record<string, unknown>): Promise<
       const text: string | undefined = candidate?.content?.parts
         ?.map((p: { text?: string }) => p.text ?? '')
         .join('');
+
+      if (candidate?.finishReason === 'MAX_TOKENS') {
+        lastStatus = 502;
+        lastMessage = `${model}: response cut off`;
+        continue;
+      }
 
       if (!text) {
         const reason = candidate?.finishReason ?? data?.promptFeedback?.blockReason ?? 'empty response';
@@ -47,10 +62,7 @@ export async function callGeminiJson<T>(body: Record<string, unknown>): Promise<
         return JSON.parse(stripFences(text)) as T;
       } catch {
         console.error('[gemini] unparseable output', model, candidate?.finishReason, text.slice(0, 300));
-        throw new GeminiError(
-          candidate?.finishReason === 'MAX_TOKENS' ? 'AI response was cut off' : 'AI returned malformed JSON',
-          502,
-        );
+        throw new GeminiError('AI returned malformed JSON', 502);
       }
     }
 

@@ -115,7 +115,7 @@ export default function LookbookScreen() {
         let msg = error.message ?? 'Failed to post';
         try {
           const detail = await (error as any).context?.json?.();
-          if (detail?.error) msg = detail.error;
+          msg = detail?.error ?? detail?.message ?? msg;
         } catch {}
         throw new Error(msg);
       }

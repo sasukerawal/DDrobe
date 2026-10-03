@@ -3,7 +3,7 @@ import { tokenCache } from '@clerk/expo/token-cache';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import Constants from 'expo-constants';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useEffect } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -76,7 +76,7 @@ function InitialLayout() {
         if (dbUser) setDbUser(dbUser);
 
         // Register push token only in dev/prod builds — not in Expo Go (removed SDK 53+)
-        if (Platform.OS !== 'web' && Constants.appOwnership !== 'expo') {
+        if (Platform.OS !== 'web' && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient) {
           try {
             const Notifications = await import('expo-notifications');
             const { status } = await Notifications.requestPermissionsAsync();

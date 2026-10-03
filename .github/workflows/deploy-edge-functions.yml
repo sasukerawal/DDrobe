@@ -17,9 +17,11 @@ jobs:
           version: latest
 
       # Deploys every function folder (folders starting with "_" are shared code).
+      # --no-verify-jwt: the gateway only accepts Supabase-issued JWTs and rejects Clerk's;
+      # each function verifies the Clerk token itself (_shared/auth.ts) or a cron secret.
       # Function secrets are managed once with `supabase secrets set`, not from CI,
       # so a missing GitHub secret can never blank a live key.
       - name: Deploy all Edge Functions
-        run: supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: supabase functions deploy --no-verify-jwt --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

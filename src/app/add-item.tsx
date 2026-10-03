@@ -55,7 +55,7 @@ export default function AddItemScreen() {
         let msg = error.message ?? 'AI tagging failed';
         try {
           const detail = await (error as any).context?.json?.();
-          if (detail?.error) msg = detail.error;
+          msg = detail?.error ?? detail?.message ?? msg;
         } catch {}
         throw new Error(msg);
       }
@@ -209,8 +209,8 @@ export default function AddItemScreen() {
           console.warn('[Camera] mount error:', e.message);
           setCameraError(e.message || 'Camera is not supported on this device.');
         }}
-      >
-        <SafeAreaView style={styles.cameraOverlay}>
+      />
+      <SafeAreaView style={styles.cameraOverlay}>
           <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
             <Ionicons name="close" size={22} color="#fff" />
           </TouchableOpacity>
@@ -238,7 +238,6 @@ export default function AddItemScreen() {
             </View>
           </View>
         </SafeAreaView>
-      </CameraView>
     </View>
   );
 }
@@ -288,7 +287,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cameraOverlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'space-between',
   },
   closeButton: {

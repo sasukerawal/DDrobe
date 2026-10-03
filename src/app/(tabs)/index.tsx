@@ -125,11 +125,14 @@ export default function DailyStylistScreen() {
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status === 'granted') {
-            const location = await Location.getCurrentPositionAsync({});
+            const location =
+              (await Location.getLastKnownPositionAsync().catch(() => null)) ??
+              (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }));
             coordsRef.current = { lat: location.coords.latitude, lon: location.coords.longitude };
           }
         } catch (e) {
-          console.warn('[Stylist] location unavailable:', e);
+          // Location services off: outfits are still generated, just without live weather.
+          console.log('[Stylist] location unavailable, continuing without weather:', e);
         }
       }
 
@@ -145,7 +148,7 @@ export default function DailyStylistScreen() {
         let msg = error.message ?? 'Failed to generate outfits';
         try {
           const detail = await (error as any).context?.json?.();
-          if (detail?.error) msg = detail.error;
+          msg = detail?.error ?? detail?.message ?? msg;
         } catch {}
         throw new Error(msg);
       }
@@ -223,7 +226,7 @@ export default function DailyStylistScreen() {
               let msg = error.message ?? 'Failed to post outfit';
               try {
                 const detail = await (error as any).context?.json?.();
-                if (detail?.error) msg = detail.error;
+                msg = detail?.error ?? detail?.message ?? msg;
               } catch {}
               throw new Error(msg);
             }
