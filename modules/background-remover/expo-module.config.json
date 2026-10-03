@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["BackgroundRemoverModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.ddrobe.backgroundremover.BackgroundRemoverModule"]
+  }
+}

@@ -1,49 +1,53 @@
 # UI Context & Design System
 
-## Core Aesthetic
-- **Vibe:** Modern, premium, Gen Z/Millennial focused. It should not look like a basic database app.
-- **Visuals:** Glassmorphism, smooth gradients, subtle micro-animations (e.g., when swiping or liking), and dynamic layouts.
-- **Theme:** Strict support for Light and Dark modes.
+## Core Aesthetic — "System Clarity" (updated post-impeccable redesign)
+- **Vibe:** Apple-grade information architecture meets fashion editorial. Premium-minimal, not database-app.
+- **Visuals:** Pure white/black surfaces, warm camel accent as the sole color moment, system-ui font, no glassmorphism or gradients.
+- **Theme:** Strict light/dark adaptive via `useThemeColors()` hook on tab screens. Auth screens are always light (white card on camel brand zone).
+- **Design token source:** `src/constants/theme.ts` — never hardcode hex values anywhere.
 
-## Color Palette (Tokens)
-Use these semantic tokens throughout the app to ensure consistency. Do not hardcode hex values in components.
+## Color Palette (current — src/constants/theme.ts)
+```typescript
+Colors.primary      = '#111111'   // near-black; filled CTAs, tab active icons
+Colors.accent       = '#B8936A'   // warm camel/leather; links, focus rings, brand zone bg
+Colors.accentLight  = '#D4AF87'
+Colors.danger       = '#EF4444'
+Colors.warning      = '#F59E0B'
+Colors.success      = '#22C55E'
 
-### Primary Colors
-- `primary`: `#6D28D9` (Vibrant Purple - for primary buttons, active tabs, highlights)
-- `primary-light`: `#8B5CF6`
-- `primary-dark`: `#5B21B6`
+// Light mode
+Colors.light.text             = '#1C1C1E'
+Colors.light.textSecondary    = '#6C6C70'
+Colors.light.textTertiary     = '#AEAEB2'
+Colors.light.background       = '#FFFFFF'
+Colors.light.backgroundElement= '#F2F2F7'
+Colors.light.border           = 'rgba(60,60,67,0.12)'
+Colors.light.separator        = 'rgba(60,60,67,0.08)'
 
-### Backgrounds
-- `background-light`: `#FAFAFA`
-- `background-dark`: `#121212`
-- `surface-light`: `#FFFFFF`
-- `surface-dark`: `#1E1E1E` (for cards, modals)
+// Dark mode (same keys, different values)
+Colors.dark.text              = '#FFFFFF'
+Colors.dark.background        = '#000000'
+Colors.dark.backgroundElement = '#1C1C1E'
+Colors.dark.border            = 'rgba(84,84,88,0.65)'
+```
 
-### Text
-- `text-primary-light`: `#1A1A1A`
-- `text-secondary-light`: `#6B7280`
-- `text-primary-dark`: `#F9FAFB`
-- `text-secondary-dark`: `#9CA3AF`
-
-### Functional Colors
-- `success`: `#10B981` (for approved looks)
-- `danger`: `#EF4444` (for rejections or "In the Wash")
-- `warning`: `#F59E0B`
-- `glow`: `rgba(139, 92, 246, 0.4)` (for Amazon/Pinterest trending item injection)
-
-## Typography
-- **Primary Font:** `Inter` or `Outfit` (sans-serif, clean, modern).
-- **Headings (H1):** 32px, Bold, tight tracking.
-- **Subheadings (H2):** 24px, SemiBold.
-- **Body:** 16px, Regular, 1.5 line height.
-- **Small/Caption:** 12px, Medium.
+> **NOTE:** The old purple palette (`#6D28D9`) is no longer in use. It was replaced during the impeccable System Clarity redesign.
 
 ## Component Geometry
-- **Cards (e.g., Outfit Swipe Cards):** Border radius `16px`. Soft drop shadow in light mode, subtle 1px border (`#333`) in dark mode.
-- **Buttons:** Border radius `12px` (pill-shaped). Min height `48px` for tap targets.
-- **Images:** Aspect ratio varies, but usually 3:4 for clothing items on cards.
+- **Primary buttons:** `borderRadius: Radius.pill` (999) — pill shaped, black fill, white text.
+- **Input fields:** `borderRadius: Radius.input` (10), `backgroundColor: Colors.light.backgroundElement`.
+- **Cards:** `borderRadius: Radius.card` (16).
+- **Min tap target:** 48px height.
+
+## Auth Screens — AuthShell Pattern
+All auth screens use `src/components/AuthShell.tsx`:
+- Top brand zone: `Colors.accent` (`#B8936A`) background with DDrobe wordmark + ghost "D" editorial element.
+- Bottom white card: `borderTopLeftRadius: 28, borderTopRightRadius: 28` — slides up on mount with Reanimated spring animation.
+- Form interior uses `Colors.light.*` tokens.
+- Tagline is customized per screen via the `tagline` prop.
 
 ## Interaction & Animation
-- **Swipe Cards:** Must use smooth spring physics (e.g., via Reanimated or standard Animated API).
-- **Haptic Feedback:** Trigger light haptics on button presses, and medium haptics on successful background removal or outfit swipe.
-- **Transitions:** Use Expo Router's built-in shared element transitions or layout animations when navigating between the grid and item detail views.
+- **Swipe Cards:** Reanimated spring physics via `Gesture.Pan()` + `GestureDetector`.
+- **Auth entrance:** `useSharedValue` → `withSpring` slide-up + opacity fade for form card.
+- **Haptic Feedback:** Light on button press, Medium on verification/reset success.
+- **Password strength bar:** Animated width + color on sign-up and change-password screens.

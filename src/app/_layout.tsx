@@ -3,14 +3,14 @@ import { tokenCache } from '@clerk/expo/token-cache';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import Constants from 'expo-constants';
 import { useEffect } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import * as Notifications from 'expo-notifications';
-
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { syncUserToSupabase } from '@/utils/userSync';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useAppStore } from '@/store/useAppStore';
 import { createAuthenticatedClient } from '@/utils/supabase';
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '';
@@ -53,6 +53,16 @@ function InitialLayout() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSignedIn, isLoaded, segments[0]]);
 
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      setDbUser(null);
+      const app = useAppStore.getState();
+      app.setClosetItems([]);
+      app.setDailyOutfits([]);
+      app.resetDailyGenerations();
+    }
+  }, [isLoaded, isSignedIn]);
+
   // Sync user row to Supabase on sign-in, populate dbUser store, register push token
   useEffect(() => {
     if (!isSignedIn || !userId || !user) return;
@@ -65,15 +75,20 @@ function InitialLayout() {
         const dbUser = await syncUserToSupabase(token, userId, email);
         if (dbUser) setDbUser(dbUser);
 
-        // Register Expo push token and save it to the users table
-        if (Platform.OS !== 'web') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          if (status === 'granted') {
-            const { data: pushToken } = await Notifications.getExpoPushTokenAsync();
-            if (pushToken) {
-              const client = createAuthenticatedClient(token);
-              await client.from('users').update({ push_token: pushToken }).eq('id', userId);
+        // Register push token only in dev/prod builds — not in Expo Go (removed SDK 53+)
+        if (Platform.OS !== 'web' && Constants.appOwnership !== 'expo') {
+          try {
+            const Notifications = await import('expo-notifications');
+            const { status } = await Notifications.requestPermissionsAsync();
+            if (status === 'granted') {
+              const { data: pushToken } = await Notifications.getExpoPushTokenAsync();
+              if (pushToken) {
+                const client = createAuthenticatedClient(token);
+                await client.from('users').update({ push_token: pushToken }).eq('id', userId);
+              }
             }
+          } catch {
+            // Push registration is best-effort; silently skip on error
           }
         }
       } catch (e) {
@@ -102,6 +117,9 @@ function InitialLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="add-item" options={{ presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="change-password" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="email-import" options={{ presentation: 'fullScreenModal', headerShown: false }} />
+        <Stack.Screen name="sso-callback" options={{ headerShown: false }} />
       </Stack>
       <AnimatedSplashOverlay />
     </ThemeProvider>

@@ -67,10 +67,4 @@ export interface GeneratedOutfit {
   bottom: ClosetItem;
   shoe: ClosetItem;
   accessory?: ClosetItem;
-  sponsoredItem?: {
-    category: string;
-    color: string;
-    pattern: string;
-    affiliateLink: string;
-  };
 }

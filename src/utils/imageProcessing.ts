@@ -1,47 +1,39 @@
-import * as FileSystem from 'expo-file-system';
-import * as ImageManipulator from 'expo-image-manipulator';
+import { ImageManipulator, SaveFormat, type ImageRef } from 'expo-image-manipulator';
+import { backgroundRemovalAvailable, removeBackgroundAsync } from './backgroundRemoval';
 
-/**
- * Resizes an image to exactly 512x512 pixels.
- * This is the "Low-Res AI Tagging Hack" from context/architecture.md.
- * Locking image size to 512x512 keeps OpenAI Vision cost at exactly 85 tokens (~$0.0004/image).
- *
- * @param uri - Local file URI of the captured image
- * @returns A new local URI pointing to the 512x512 resized image
- */
-export async function resizeTo512(uri: string): Promise<string> {
-  const result = await ImageManipulator.manipulateAsync(
-    uri,
-    [{ resize: { width: 512, height: 512 } }],
-    { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG },
-  );
-  return result.uri;
+const MAX_SIDE = 512;
+
+async function fitWithin512(uri: string): Promise<ImageRef> {
+  const original = await ImageManipulator.manipulate(uri).renderAsync();
+  const context = ImageManipulator.manipulate(original);
+  if (original.width > MAX_SIDE || original.height > MAX_SIDE) {
+    context.resize(original.width >= original.height ? { width: MAX_SIDE } : { height: MAX_SIDE });
+  }
+  return context.renderAsync();
 }
 
-/**
- * Converts a local image URI to a base64 string.
- * Used for sending images to the Supabase Edge Function.
- *
- * @param uri - Local file URI
- * @returns Base64 encoded string of the image
- */
-export async function uriToBase64(uri: string): Promise<string> {
-  const base64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  return base64;
+async function toJpegBase64(image: ImageRef): Promise<string> {
+  const result = await image.saveAsync({ compress: 0.8, format: SaveFormat.JPEG, base64: true });
+  if (!result.base64) throw new Error('Image processing failed: no base64 output');
+  return result.base64;
 }
 
-/**
- * Full processing pipeline for a captured photo before upload:
- * 1. Resize to 512x512
- * 2. Convert to base64
- *
- * @param uri - Raw captured image URI
- * @returns base64 string of the processed image
- */
-export async function processImageForUpload(uri: string): Promise<string> {
-  const resizedUri = await resizeTo512(uri);
-  const base64 = await uriToBase64(resizedUri);
-  return base64;
+// Fits the photo inside 512×512 (keeping its proportions) and returns JPEG base64.
+// With removeBackground, the background is replaced with white on-device first; if that
+// isn't possible (Expo Go, iOS < 17, no item detected) the original photo is used.
+export async function processImageForUpload(
+  uri: string,
+  { removeBackground = false }: { removeBackground?: boolean } = {},
+): Promise<string> {
+  const resized = await fitWithin512(uri);
+  if (!removeBackground || !backgroundRemovalAvailable) return toJpegBase64(resized);
+
+  try {
+    const saved = await resized.saveAsync({ compress: 0.95, format: SaveFormat.JPEG });
+    const cleanedUri = await removeBackgroundAsync(saved.uri);
+    return toJpegBase64(await ImageManipulator.manipulate(cleanedUri).renderAsync());
+  } catch (e) {
+    console.warn('[imageProcessing] background removal skipped:', e);
+    return toJpegBase64(resized);
+  }
 }

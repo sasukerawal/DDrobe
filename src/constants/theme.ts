@@ -1,8 +1,8 @@
 /**
- * DDrobe Design Tokens
- * Source of truth for all colors, spacing, and typography.
+ * DDrobe Design Tokens — v2
+ * Clean minimal system: Apple-grade information architecture for fashion.
+ * Primary CTA: near-black (#111). Warm accent: camel/leather (#B8936A).
  * All components MUST import from this file. Never hardcode hex values.
- * Tokens sourced from context/ui_context.md
  */
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -11,40 +11,47 @@ import '@/global.css';
 import { Platform } from 'react-native';
 
 export const Colors = {
-  // Light / Dark mode surfaces
+  // ── Light mode ──────────────────────────────────────────────
   light: {
-    text: '#1A1A1A',
-    textSecondary: '#6B7280',
-    background: '#FAFAFA',
-    backgroundElement: '#FFFFFF',
-    backgroundSelected: '#F3F0FF',
+    text: '#1C1C1E',
+    textSecondary: '#6C6C70',
+    textTertiary: '#AEAEB2',
+    background: '#FFFFFF',
+    backgroundSecondary: '#F2F2F7',
+    backgroundElement: '#F2F2F7',
+    backgroundSelected: '#E5E5EA',
     surface: '#FFFFFF',
-    border: 'rgba(0,0,0,0.08)',
+    border: 'rgba(60,60,67,0.12)',
+    separator: 'rgba(60,60,67,0.08)',
   },
+  // ── Dark mode ────────────────────────────────────────────────
   dark: {
-    text: '#F9FAFB',
-    textSecondary: '#9CA3AF',
-    background: '#121212',
-    backgroundElement: '#1E1E1E',
-    backgroundSelected: '#2D2040',
-    surface: '#1E1E1E',
-    border: '#333333',
+    text: '#FFFFFF',
+    textSecondary: '#8E8E93',
+    textTertiary: '#48484A',
+    background: '#000000',
+    backgroundSecondary: '#1C1C1E',
+    backgroundElement: '#1C1C1E',
+    backgroundSelected: '#2C2C2E',
+    surface: '#1C1C1E',
+    border: 'rgba(84,84,88,0.65)',
+    separator: 'rgba(84,84,88,0.45)',
   },
-  // Brand palette
-  primary: '#6D28D9',
-  primaryLight: '#8B5CF6',
-  primaryDark: '#5B21B6',
-  // Functional
-  success: '#10B981',
+  // ── Brand (theme-independent) ────────────────────────────────
+  primary: '#111111',       // near-black — filled buttons in light mode
+  primaryLight: '#444444',
+  primaryDark: '#000000',
+  accent: '#B8936A',        // warm camel/leather — premium accent
+  accentLight: '#D4AF87',
+  success: '#22C55E',
   danger: '#EF4444',
   warning: '#F59E0B',
-  glow: 'rgba(139, 92, 246, 0.4)',
-  // Flat convenience tokens (dark-mode defaults for screens without useColorScheme)
-  background: '#121212',
-  text: '#F9FAFB',
-  surface: '#1E1E1E',
-  backgroundElement: '#1E1E1E',
-  textSecondary: '#9CA3AF',
+  // ── Flat convenience tokens (dark-mode defaults) ─────────────
+  background: '#000000',
+  text: '#FFFFFF',
+  surface: '#1C1C1E',
+  backgroundElement: '#1C1C1E',
+  textSecondary: '#8E8E93',
 } as const;
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
@@ -80,12 +87,12 @@ export const Spacing = {
   six: 64,
 } as const;
 
-// Border radiuses from ui_context.md
 export const Radius = {
   card: 16,
   button: 12,
   input: 10,
   small: 6,
+  pill: 999,
 } as const;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;

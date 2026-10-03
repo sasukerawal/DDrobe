@@ -1,5 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, Dimensions, TouchableOpacity, Linking, Alert, Modal, TextInput } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  Text,
+  ActivityIndicator,
+  Dimensions,
+  TouchableOpacity,
+  Alert,
+  Modal,
+  TextInput,
+} from 'react-native';
 import { useAuth } from '@clerk/expo';
 import type { WeatherContext } from '@/types';
 import * as Location from 'expo-location';
@@ -9,20 +19,24 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   runOnJS,
+  interpolate,
+  Extrapolation,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { createAuthenticatedClient } from '@/utils/supabase';
 import { useAppStore } from '@/store/useAppStore';
-import { Colors, Spacing } from '@/constants/theme';
+import { useAuthStore } from '@/store/useAuthStore';
+import { Colors, Spacing, Radius } from '@/constants/theme';
 import { useThemeColors, type ThemeColors } from '@/hooks/useThemeColors';
 import type { GeneratedOutfit } from '@/types';
 import * as Haptics from 'expo-haptics';
+import { DropdownMenu } from '@/components/DropdownMenu';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3;
 
-// AdMob is only available in native builds, not Expo Go
 let rewarded: { addAdEventListener: Function; load: Function; show: Function } | null = null;
 let RewardedAdEventType: { LOADED: string; EARNED_REWARD: string } | null = null;
 
@@ -32,7 +46,7 @@ try {
   rewarded = admob.RewardedAd.createForAdRequest(adUnitId, { requestNonPersonalizedAdsOnly: true });
   RewardedAdEventType = admob.RewardedAdEventType;
 } catch {
-  // Native AdMob module not available — running in Expo Go
+  // Native AdMob not available in Expo Go
 }
 
 export default function DailyStylistScreen() {
@@ -44,7 +58,9 @@ export default function DailyStylistScreen() {
   const [generatingMore, setGeneratingMore] = useState(false);
   const [vacationModalVisible, setVacationModalVisible] = useState(false);
   const [vacationPrompt, setVacationPrompt] = useState('');
+  const [menuVisible, setMenuVisible] = useState(false);
   const weatherRef = useRef<WeatherContext | null>(null);
+  const coordsRef = useRef<{ lat: number; lon: number } | null>(null);
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -75,16 +91,24 @@ export default function DailyStylistScreen() {
     if (!userId) return;
     setLoading(true);
     try {
-      const token = await getToken();
-      if (!token) throw new Error('No auth token');
-      const client = createAuthenticatedClient(token);
-
       let items = closetItems;
+
+      // Fetch closet items if not cached — retry once on PGRST303 (JWT clock-skew)
       if (items.length === 0) {
-        const { data, error } = await client.from('closet_items').select('*');
-        if (error) throw error;
-        items = data || [];
-        setClosetItems(items);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
+          const token = await getToken({ skipCache: attempt > 0 });
+          if (!token) throw new Error('No auth token');
+          const client = createAuthenticatedClient(token);
+          const { data, error } = await client.from('closet_items').select('*');
+          if (error) {
+            if ((error as any).code === 'PGRST303' && attempt === 0) continue;
+            throw error;
+          }
+          items = data || [];
+          setClosetItems(items);
+          break;
+        }
       }
 
       if (items.length === 0) {
@@ -93,28 +117,46 @@ export default function DailyStylistScreen() {
         return;
       }
 
-      let lat = 0;
-      let lon = 0;
-      if (count >= 3) {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({});
-          lat = location.coords.latitude;
-          lon = location.coords.longitude;
+      const token = await getToken({ skipCache: true });
+      if (!token) throw new Error('No auth token');
+      const client = createAuthenticatedClient(token);
+
+      if (!coordsRef.current) {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const location = await Location.getCurrentPositionAsync({});
+            coordsRef.current = { lat: location.coords.latitude, lon: location.coords.longitude };
+          }
+        } catch (e) {
+          console.warn('[Stylist] location unavailable:', e);
         }
       }
 
       const { data, error } = await client.functions.invoke('generate-outfit', {
-        body: { userId, lat, lon, closetItems: items, count, vacationContext },
+        body: { ...coordsRef.current, count, vacationContext },
       });
 
-      if (error) throw error;
-      if (data && data.outfits) {
-        if (data.weather) weatherRef.current = data.weather;
+      if (error) {
+        if ((error as any).context?.status === 429) {
+          setErrorMsg('daily_limit');
+          return;
+        }
+        let msg = error.message ?? 'Failed to generate outfits';
+        try {
+          const detail = await (error as any).context?.json?.();
+          if (detail?.error) msg = detail.error;
+        } catch {}
+        throw new Error(msg);
+      }
+      setErrorMsg('');
+      if (data?.outfits) {
+        weatherRef.current = data.weather ?? null;
         setDailyOutfits([...useAppStore.getState().dailyOutfits, ...data.outfits]);
       }
-      if (data?.limitReached) {
-        setErrorMsg('daily_limit');
+      const dbUser = useAuthStore.getState().dbUser;
+      if (dbUser && typeof data?.generationsUsed === 'number') {
+        useAuthStore.getState().setDbUser({ ...dbUser, daily_generations_used: data.generationsUsed });
       }
     } catch (e: any) {
       console.error('[Stylist] fetchClosetAndGenerate error:', e);
@@ -129,8 +171,7 @@ export default function DailyStylistScreen() {
 
   const handleAdWatched = () => {
     setGeneratingMore(true);
-    fetchClosetAndGenerate(2); // generate 2 more
-    // Preload next ad
+    fetchClosetAndGenerate(2);
     setAdLoaded(false);
     rewarded?.load();
   };
@@ -143,7 +184,6 @@ export default function DailyStylistScreen() {
     }
     removeOutfit(outfit.id);
 
-    // Persist to outfits_history — fire and forget, don't block UX
     try {
       const token = await getToken();
       if (!token) return;
@@ -166,41 +206,46 @@ export default function DailyStylistScreen() {
   const postToLookbook = async (outfit: GeneratedOutfit) => {
     Alert.alert('Post to Lookbook', 'This will share your outfit to the community feed. Moderation applies.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Post', onPress: async () => {
+      {
+        text: 'Post',
+        onPress: async () => {
           try {
-            // Pick the first image as the representative image for the lookbook for now
             const imageUrl = outfit.top?.image_url || outfit.bottom?.image_url || outfit.shoe?.image_url;
-            if (!imageUrl) throw new Error("No image found for this outfit.");
-            
+            if (!imageUrl) throw new Error('No image found for this outfit.');
             const caption = `Stylist recommended: ${outfit.style} look!`;
-            
             const token = await getToken();
             if (!token) throw new Error('Not authenticated');
             const client = createAuthenticatedClient(token);
             const { data, error } = await client.functions.invoke('create-post', {
-              body: { userId, imageUrl, caption },
+              body: { imageUrl, caption },
             });
-
-            if (error) throw error;
+            if (error) {
+              let msg = error.message ?? 'Failed to post outfit';
+              try {
+                const detail = await (error as any).context?.json?.();
+                if (detail?.error) msg = detail.error;
+              } catch {}
+              throw new Error(msg);
+            }
             if (data?.isSafe) {
               Alert.alert('Success', 'Outfit posted to Lookbook!');
             } else {
               Alert.alert('Notice', 'Post was flagged by moderation and will not be displayed.');
             }
-          } catch(e: any) {
+          } catch (e: any) {
             console.error(e);
             Alert.alert('Error', e.message || 'Failed to post outfit');
           }
-        }
-      }
+        },
+      },
     ]);
-  }
+  };
 
   if (loading && dailyOutfits.length === 0) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Your AI Stylist is thinking...</Text>
+        <ActivityIndicator size="large" color={colors.text} />
+        <Text style={styles.loadingText}>Styling your look…</Text>
       </View>
     );
   }
@@ -209,20 +254,22 @@ export default function DailyStylistScreen() {
     const isDailyLimit = errorMsg === 'daily_limit';
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.errorIcon}>{isDailyLimit ? '✨' : '👗'}</Text>
+        <View style={styles.errorIconContainer}>
+          <Text style={styles.errorIconText}>{isDailyLimit ? '✦' : '◈'}</Text>
+        </View>
         <Text style={styles.errorTitle}>
-          {isDailyLimit ? "You've hit today's limit" : "Couldn't load your outfits"}
+          {isDailyLimit ? "Daily limit reached" : "Couldn't load outfits"}
         </Text>
         <Text style={styles.errorText}>
           {isDailyLimit
-            ? 'Watch an ad to unlock more outfit suggestions, or come back tomorrow!'
+            ? "You've used today's 10 outfit generations. New ones unlock at midnight (UTC)."
             : errorMsg.includes('closet is empty')
-            ? 'Add some clothing items to your closet first, then come back!'
+            ? 'Add some clothes to your wardrobe first, then come back.'
             : 'Something went wrong. Check your connection and try again.'}
         </Text>
         {!isDailyLimit && (
-          <TouchableOpacity style={styles.retryButton} onPress={() => fetchClosetAndGenerate()}>
-            <Text style={styles.retryButtonText}>Try Again</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => fetchClosetAndGenerate()}>
+            <Text style={styles.primaryButtonText}>Try Again</Text>
           </TouchableOpacity>
         )}
       </SafeAreaView>
@@ -231,12 +278,49 @@ export default function DailyStylistScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.headerRow}>
-        <Text style={styles.header}>Daily Stylist</Text>
-        <TouchableOpacity style={styles.vacationButton} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setVacationModalVisible(true); }}>
-          <Text style={styles.vacationButtonText}>✈️ Pack</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Today</Text>
+          {weatherRef.current && (
+            <Text style={styles.weatherChip}>
+              {weatherRef.current.temp_celsius}° · {weatherRef.current.condition}
+            </Text>
+          )}
+        </View>
+        <TouchableOpacity
+          style={styles.moreBtn}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setMenuVisible(true);
+          }}
+          hitSlop={8}
+        >
+          <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
         </TouchableOpacity>
       </View>
+
+      <DropdownMenu
+        visible={menuVisible}
+        onDismiss={() => setMenuVisible(false)}
+        options={[
+          {
+            label: 'Vacation Packer',
+            icon: 'airplane-outline',
+            onPress: () => setVacationModalVisible(true),
+          },
+          {
+            label: 'Refresh Outfits',
+            icon: 'refresh-outline',
+            onPress: () => {
+              setDailyOutfits([]);
+              fetchClosetAndGenerate();
+            },
+          },
+        ]}
+      />
+
+      {/* Card stack */}
       <View style={styles.cardContainer}>
         {dailyOutfits.map((outfit, index) => {
           const isFirst = index === 0;
@@ -250,55 +334,64 @@ export default function DailyStylistScreen() {
             />
           );
         }).reverse()}
-        
+
         {dailyOutfits.length === 0 && !loading && (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>You've seen all outfits for today!</Text>
+            <Text style={styles.emptyTitle}>All caught up</Text>
+            <Text style={styles.emptyText}>You've seen today's recommendations.</Text>
             {generatingMore ? (
-              <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 20 }} />
+              <ActivityIndicator size="small" color={colors.text} style={{ marginTop: 24 }} />
             ) : rewarded ? (
               <TouchableOpacity
-                style={[styles.adButton, !adLoaded && styles.adButtonDisabled]}
+                style={[styles.primaryButton, !adLoaded && styles.buttonDisabled]}
                 disabled={!adLoaded}
                 onPress={() => rewarded!.show()}
               >
-                <Text style={styles.adButtonText}>
-                  {adLoaded ? '📺 Watch Ad for 2 More Outfits' : 'Loading Ad...'}
+                <Text style={styles.primaryButtonText}>
+                  {adLoaded ? 'Watch Ad · 2 More Outfits' : 'Loading…'}
                 </Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={styles.adButton}
+                style={styles.primaryButton}
                 onPress={() => fetchClosetAndGenerate(2)}
               >
-                <Text style={styles.adButtonText}>Generate 2 More Outfits</Text>
+                <Text style={styles.primaryButtonText}>Generate 2 More</Text>
               </TouchableOpacity>
             )}
           </View>
         )}
       </View>
 
+      {/* Vacation packer modal */}
       <Modal visible={vacationModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Vacation Packer</Text>
-            <Text style={styles.modalSub}>Where are you going? (e.g. "Miami, Weekend")</Text>
+            <Text style={styles.modalSub}>Describe your trip and we'll build outfits around it.</Text>
             <TextInput
               style={styles.modalInput}
               value={vacationPrompt}
               onChangeText={setVacationPrompt}
-              placeholder="e.g. Ski trip in Aspen"
-              placeholderTextColor={Colors.textSecondary}
+              placeholder="e.g. Ski trip in Aspen, 5 days"
+              placeholderTextColor={colors.textTertiary}
             />
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setVacationModalVisible(false); }}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
+              <TouchableOpacity
+                style={styles.ghostButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setVacationModalVisible(false);
+                }}
+              >
+                <Text style={styles.ghostButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.modalSubmit}
+                style={styles.primaryButton}
                 onPress={() => {
                   if (!vacationPrompt.trim()) {
-                    Alert.alert('Missing info', 'Please describe where you are going.');
+                    Alert.alert('Missing info', "Describe where you're going.");
                     return;
                   }
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -307,18 +400,18 @@ export default function DailyStylistScreen() {
                   fetchClosetAndGenerate(3, vacationPrompt);
                 }}
               >
-                <Text style={styles.modalSubmitText}>Generate</Text>
+                <Text style={styles.primaryButtonText}>Generate</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-
     </SafeAreaView>
   );
 }
 
-// Swipeable Card Component
+// ─── Swipeable Card ───────────────────────────────────────────────────────────
+
 interface SwipeableCardProps {
   outfit: GeneratedOutfit;
   isFirst: boolean;
@@ -341,7 +434,7 @@ function SwipeableCard({ outfit, isFirst, onSwipe, onPost }: SwipeableCardProps)
       if (Math.abs(event.translationX) > SWIPE_THRESHOLD) {
         const direction = event.translationX > 0 ? 'right' : 'left';
         translateX.value = withSpring(
-          direction === 'right' ? SCREEN_WIDTH : -SCREEN_WIDTH,
+          direction === 'right' ? SCREEN_WIDTH * 1.5 : -SCREEN_WIDTH * 1.5,
           { velocity: event.velocityX },
         );
         runOnJS(onSwipe)(direction);
@@ -355,8 +448,16 @@ function SwipeableCard({ outfit, isFirst, onSwipe, onPost }: SwipeableCardProps)
     transform: [
       { translateX: translateX.value },
       { translateY: translateY.value },
-      { rotate: `${translateX.value / 20}deg` },
+      { rotate: `${translateX.value / 22}deg` },
     ],
+  }));
+
+  const wearOpacity = useAnimatedStyle(() => ({
+    opacity: interpolate(translateX.value, [0, SWIPE_THRESHOLD * 0.6], [0, 1], Extrapolation.CLAMP),
+  }));
+
+  const passOpacity = useAnimatedStyle(() => ({
+    opacity: interpolate(translateX.value, [-SWIPE_THRESHOLD * 0.6, 0], [1, 0], Extrapolation.CLAMP),
   }));
 
   return (
@@ -364,6 +465,13 @@ function SwipeableCard({ outfit, isFirst, onSwipe, onPost }: SwipeableCardProps)
       {isFirst ? (
         <GestureDetector gesture={pan}>
           <Animated.View style={[styles.card, rStyle]}>
+            {/* Swipe overlays */}
+            <Animated.View style={[styles.swipeBadge, styles.swipeBadgeWear, wearOpacity]}>
+              <Text style={styles.swipeBadgeText}>WEAR</Text>
+            </Animated.View>
+            <Animated.View style={[styles.swipeBadge, styles.swipeBadgePass, passOpacity]}>
+              <Text style={styles.swipeBadgeText}>PASS</Text>
+            </Animated.View>
             <CardContent outfit={outfit} onPost={onPost} />
           </Animated.View>
         </GestureDetector>
@@ -376,41 +484,58 @@ function SwipeableCard({ outfit, isFirst, onSwipe, onPost }: SwipeableCardProps)
   );
 }
 
-function CardContent({ outfit, onPost }: { outfit: GeneratedOutfit, onPost: () => void }) {
+function CardContent({ outfit, onPost }: { outfit: GeneratedOutfit; onPost: () => void }) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const heroImage = outfit.top?.image_url || outfit.bottom?.image_url || outfit.shoe?.image_url;
+  const secondaryItems = [outfit.bottom, outfit.shoe, outfit.accessory].filter(Boolean);
+
   return (
     <View style={styles.cardContent}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.three }}>
-        <Text style={styles.styleTitle}>{outfit.style}</Text>
-        <TouchableOpacity style={styles.postButton} onPress={onPost}>
-          <Text style={styles.postButtonText}>Post</Text>
+      {/* Hero image — takes ~58% of card height */}
+      <View style={styles.heroBlock}>
+        {heroImage ? (
+          <Image source={heroImage} style={styles.heroImage} contentFit="cover" />
+        ) : (
+          <View style={[styles.heroImage, styles.heroPlaceholder]}>
+            <Text style={styles.heroPlaceholderText}>◈</Text>
+          </View>
+        )}
+        {/* Style badge overlay */}
+        <View style={styles.styleBadge}>
+          <Text style={styles.styleBadgeText}>{outfit.style.toUpperCase()}</Text>
+        </View>
+        {/* Share button overlay */}
+        <TouchableOpacity style={styles.shareButton} onPress={onPost} activeOpacity={0.8}>
+          <Ionicons name="arrow-up-circle" size={28} color="rgba(255,255,255,0.92)" />
         </TouchableOpacity>
       </View>
-      
-      <View style={styles.imagesContainer}>
-        {outfit.top && <Image source={outfit.top.image_url} style={styles.itemImage} />}
-        {outfit.bottom && <Image source={outfit.bottom.image_url} style={styles.itemImage} />}
-        {outfit.shoe && <Image source={outfit.shoe.image_url} style={styles.itemImage} />}
-        {outfit.accessory && <Image source={outfit.accessory.image_url} style={styles.itemImage} />}
-        
-        {outfit.sponsoredItem && (
-          <TouchableOpacity 
-            style={[styles.itemImage, styles.sponsoredWrapper]} 
-            onPress={() => Linking.openURL(outfit.sponsoredItem!.affiliateLink)}
-          >
-            <Text style={styles.sponsoredText}>Trending</Text>
-            <Text style={styles.sponsoredDesc}>
-              {outfit.sponsoredItem.color} {outfit.sponsoredItem.pattern} {outfit.sponsoredItem.category}
-            </Text>
-            <Text style={styles.buyText}>Shop</Text>
-          </TouchableOpacity>
-        )}
+
+      {/* Secondary items row */}
+      <View style={styles.secondaryRow}>
+        {secondaryItems.map((item, i) => (
+          <Image
+            key={i}
+            source={item!.image_url}
+            style={styles.secondaryImage}
+            contentFit="cover"
+          />
+        ))}
       </View>
-      <Text style={styles.description}>{outfit.description}</Text>
+
+      {/* Description */}
+      <View style={styles.descriptionBlock}>
+        <Text style={styles.description} numberOfLines={3}>{outfit.description}</Text>
+      </View>
+
+      {/* Swipe hint */}
+      <Text style={styles.swipeHint}>← pass  ·  wear today →</Text>
     </View>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
@@ -424,97 +549,115 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.background,
     padding: Spacing.four,
   },
+
+  // ── Header ──
   headerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.two,
-    paddingBottom: Spacing.four,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.three,
   },
-  header: {
+  headerTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: c.text,
+    letterSpacing: -0.5,
   },
-  vacationButton: {
-    backgroundColor: 'rgba(109, 40, 217, 0.1)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+  weatherChip: {
+    fontSize: 13,
+    color: c.textSecondary,
+    fontWeight: '400',
+    marginTop: 2,
   },
-  vacationButtonText: {
-    color: Colors.primary,
-    fontWeight: 'bold',
-    fontSize: 14,
+  moreBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+
+  // ── Loading / Error ──
   loadingText: {
     marginTop: Spacing.three,
     color: c.textSecondary,
-    fontSize: 16,
+    fontSize: 15,
+    fontWeight: '400',
+    letterSpacing: 0.3,
   },
-  errorIcon: {
-    fontSize: 48,
-    marginBottom: Spacing.two,
+  errorIconContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: c.backgroundElement,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.three,
+  },
+  errorIconText: {
+    fontSize: 28,
+    color: c.textSecondary,
   },
   errorTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '600',
     color: c.text,
     textAlign: 'center',
     marginBottom: Spacing.two,
+    letterSpacing: -0.3,
   },
   errorText: {
     color: c.textSecondary,
     fontSize: 15,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: Spacing.three,
-  },
-  retryButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: Spacing.two + 4,
-    paddingHorizontal: Spacing.five,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    padding: Spacing.four,
-  },
-  emptyText: {
-    color: c.textSecondary,
-    fontSize: 18,
-    textAlign: 'center',
     marginBottom: Spacing.four,
   },
-  adButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.four,
-    borderRadius: 12,
+
+  // ── Buttons ──
+  primaryButton: {
+    backgroundColor: c.text,
+    borderRadius: Radius.button,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.five,
+    alignItems: 'center',
   },
-  adButtonDisabled: {
-    backgroundColor: c.textSecondary,
+  primaryButtonText: {
+    color: c.background,
+    fontWeight: '600',
+    fontSize: 15,
+    letterSpacing: 0.2,
   },
-  adButtonText: {
-    color: '#FFF',
-    fontWeight: 'bold',
-    fontSize: 16,
+  ghostButton: {
+    borderRadius: Radius.button,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.five,
+    borderWidth: 1,
+    borderColor: c.border,
+    alignItems: 'center',
   },
+  ghostButtonText: {
+    color: c.text,
+    fontWeight: '500',
+    fontSize: 15,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
+
+  // ── Card stack ──
   cardContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.three,
   },
   cardWrapper: {
     position: 'absolute',
-    width: '90%',
-    height: '80%',
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -522,137 +665,171 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: c.surface,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-    padding: Spacing.four,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: c.border,
   },
+
+  // ── Swipe overlays ──
+  swipeBadge: {
+    position: 'absolute',
+    top: 24,
+    zIndex: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 2,
+  },
+  swipeBadgeWear: {
+    left: 20,
+    borderColor: Colors.success,
+  },
+  swipeBadgePass: {
+    right: 20,
+    borderColor: Colors.danger,
+  },
+  swipeBadgeText: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    color: '#FFFFFF',
+  },
+
+  // ── Card content ──
   cardContent: {
     flex: 1,
   },
-  styleTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: Colors.primary,
+  heroBlock: {
+    flex: 0.58,
+    position: 'relative',
   },
-  postButton: {
-    backgroundColor: 'rgba(109, 40, 217, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+  heroImage: {
+    width: '100%',
+    height: '100%',
   },
-  postButtonText: {
-    color: Colors.primary,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  imagesContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  heroPlaceholder: {
+    backgroundColor: c.backgroundElement,
     justifyContent: 'center',
-    gap: Spacing.two,
+    alignItems: 'center',
   },
-  itemImage: {
-    width: '45%',
-    aspectRatio: 3 / 4,
-    borderRadius: 12,
+  heroPlaceholderText: {
+    fontSize: 40,
+    color: c.textTertiary,
+  },
+  styleBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 14,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  styleBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+  },
+  shareButton: {
+    position: 'absolute',
+    bottom: 8,
+    right: 12,
+  },
+  secondaryRow: {
+    flexDirection: 'row',
+    padding: 12,
+    gap: 8,
+    flex: 0.22,
+  },
+  secondaryImage: {
+    flex: 1,
+    borderRadius: 8,
     backgroundColor: c.backgroundElement,
   },
-  sponsoredWrapper: {
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.4)',
-    padding: Spacing.two,
+  descriptionBlock: {
+    flex: 0.14,
+    paddingHorizontal: 14,
+    paddingTop: 4,
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sponsoredText: {
-    color: Colors.primary,
-    fontWeight: 'bold',
-    fontSize: 12,
-    marginBottom: Spacing.one,
-  },
-  sponsoredDesc: {
-    color: c.text,
-    fontSize: 12,
-    textAlign: 'center',
-    marginBottom: Spacing.two,
-  },
-  buyText: {
-    color: Colors.primary,
-    fontWeight: '600',
-    fontSize: 14,
   },
   description: {
-    fontSize: 16,
-    color: c.text,
-    textAlign: 'center',
-    marginTop: Spacing.three,
-    lineHeight: 24,
+    fontSize: 13,
+    color: c.textSecondary,
+    lineHeight: 19,
   },
+  swipeHint: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: c.textTertiary,
+    letterSpacing: 0.5,
+    paddingBottom: 10,
+    fontWeight: '400',
+  },
+
+  // ── Empty state ──
+  emptyContainer: {
+    alignItems: 'center',
+    gap: Spacing.three,
+    padding: Spacing.four,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: c.text,
+    letterSpacing: -0.3,
+  },
+  emptyText: {
+    color: c.textSecondary,
+    fontSize: 15,
+    textAlign: 'center',
+  },
+
+  // ── Vacation modal ──
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
   },
-  modalContent: {
-    width: '85%',
+  modalSheet: {
     backgroundColor: c.surface,
-    borderRadius: 16,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: Spacing.four,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    paddingBottom: Spacing.six,
+    gap: Spacing.three,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: c.border,
+    alignSelf: 'center',
+    marginBottom: 4,
   },
   modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '700',
     color: c.text,
-    marginBottom: Spacing.one,
+    letterSpacing: -0.3,
   },
   modalSub: {
     fontSize: 14,
     color: c.textSecondary,
-    marginBottom: Spacing.three,
+    lineHeight: 20,
   },
   modalInput: {
-    borderWidth: 1,
-    borderColor: c.backgroundElement,
-    borderRadius: 8,
+    backgroundColor: c.backgroundElement,
+    borderRadius: Radius.input,
     padding: Spacing.three,
+    fontSize: 15,
     color: c.text,
-    fontSize: 16,
-    marginBottom: Spacing.four,
+    borderWidth: 1,
+    borderColor: c.border,
   },
   modalActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: Spacing.three,
-  },
-  modalCancel: {
-    padding: Spacing.three,
-  },
-  modalCancelText: {
-    color: c.textSecondary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  modalSubmit: {
-    backgroundColor: Colors.primary,
-    padding: Spacing.three,
-    borderRadius: 8,
-    paddingHorizontal: Spacing.four,
-  },
-  modalSubmitText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: 'bold',
+    gap: Spacing.two,
   },
 });

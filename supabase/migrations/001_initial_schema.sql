@@ -12,7 +12,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Stores app-specific user data, linked to Clerk auth uid
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.users (
-  id UUID PRIMARY KEY,  -- Set to Clerk user ID from the client
+  id TEXT PRIMARY KEY,  -- Clerk user ID (format: user_XXXXXXXX, not UUID)
   email TEXT NOT NULL,
   push_token TEXT,
   style_preferences JSONB NOT NULL DEFAULT '{}',
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.closet_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   image_url TEXT NOT NULL,
   category TEXT NOT NULL CHECK (category IN ('top', 'bottom', 'shoe', 'outerwear', 'accessory')),
   color TEXT NOT NULL DEFAULT '',
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS public.closet_items (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.outfits_history (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   top_id UUID REFERENCES public.closet_items(id) ON DELETE SET NULL,
   bottom_id UUID REFERENCES public.closet_items(id) ON DELETE SET NULL,
   shoe_id UUID REFERENCES public.closet_items(id) ON DELETE SET NULL,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS public.outfits_history (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.feed_posts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   image_url TEXT NOT NULL,
   caption TEXT NOT NULL DEFAULT '',
   moderation_status TEXT NOT NULL DEFAULT 'pending' CHECK (moderation_status IN ('pending', 'approved', 'rejected')),
@@ -78,22 +78,22 @@ ALTER TABLE public.feed_posts ENABLE ROW LEVEL SECURITY;
 
 -- users: user can only see/edit their own row
 CREATE POLICY "users: own row" ON public.users
-  FOR ALL USING (id = auth.uid()::UUID);
+  FOR ALL USING (id = auth.uid());
 
 -- closet_items: user can only see/edit their own items
 CREATE POLICY "closet_items: own items" ON public.closet_items
-  FOR ALL USING (user_id = auth.uid()::UUID);
+  FOR ALL USING (user_id = auth.uid());
 
 -- outfits_history: user can only see/edit their own history
 CREATE POLICY "outfits_history: own history" ON public.outfits_history
-  FOR ALL USING (user_id = auth.uid()::UUID);
+  FOR ALL USING (user_id = auth.uid());
 
 -- feed_posts: anyone can read approved posts; user can manage their own
 CREATE POLICY "feed_posts: read approved" ON public.feed_posts
   FOR SELECT USING (moderation_status = 'approved');
 
 CREATE POLICY "feed_posts: manage own" ON public.feed_posts
-  FOR ALL USING (user_id = auth.uid()::UUID);
+  FOR ALL USING (user_id = auth.uid());
 
 -- ============================================================
 -- Indexes for performance

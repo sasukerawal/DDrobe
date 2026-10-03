@@ -1,202 +1,133 @@
 // Supabase Edge Function: parse-receipt
-// Triggered by email webhook (SendGrid/Postmark inbound parse).
-// Scrapes product image URLs from order confirmation emails.
-// Tags each item with Gemini Vision and saves to closet_items.
+// Reads one order-confirmation email and returns the clothing items it contains.
+// Extract-only: nothing is written to the database; the app adds items the user picks.
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { callGeminiJson, GeminiError } from '../_shared/gemini.ts';
+import { AuthError, requireUserId } from '../_shared/auth.ts';
 
-const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!;
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const CATEGORIES = ['top', 'bottom', 'shoe', 'outerwear', 'accessory'];
+const MAX_IMAGES = 40;
+const MAX_TEXT_CHARS = 12000;
 
-const GEMINI_API_URL =
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-
-interface WebhookPayload {
-  from: string;
-  to: string;
-  subject: string;
-  html: string;
-  userId: string;
+interface ParseReceiptBody {
+  emailHtml: string;
+  emailSubject?: string;
+  fromAddress?: string;
 }
 
-interface AITagResult {
-  category: 'top' | 'bottom' | 'shoe' | 'outerwear' | 'accessory';
-  color: string;
-  pattern: string;
-  season: string[];
-  formality: 'casual' | 'business_casual' | 'formal';
+interface ExtractedItem {
+  name: string;
+  category: string;
+  imageIndex: number | null;
 }
 
-/**
- * Extracts product image URLs from the raw HTML of an order confirmation email.
- */
-function extractProductImageUrls(html: string): string[] {
-  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-  const matches: string[] = [];
-  let match: RegExpExecArray | null;
+interface ImageCandidate {
+  url: string;
+  alt: string;
+}
 
-  while ((match = imgRegex.exec(html)) !== null) {
-    const src = match[1];
-    if (
-      src.startsWith('http') &&
-      !src.includes('tracking') &&
-      !src.includes('pixel') &&
-      !src.includes('logo') &&
-      !src.includes('icon')
-    ) {
-      matches.push(src);
-    }
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ');
+}
+
+function extractImages(html: string): ImageCandidate[] {
+  const out: ImageCandidate[] = [];
+  const seen = new Set<string>();
+  const imgRegex = /<img\b[^>]*>/gi;
+  let tag: RegExpExecArray | null;
+
+  while ((tag = imgRegex.exec(html)) !== null && out.length < MAX_IMAGES) {
+    const src = tag[0].match(/\ssrc=["']([^"']+)["']/i)?.[1];
+    if (!src) continue;
+    const url = decodeEntities(src);
+    if (!url.startsWith('https://') || seen.has(url)) continue;
+    if (/pixel|tracking|beacon|spacer|logo|icon|social|badge|1x1/i.test(url)) continue;
+    const width = Number(tag[0].match(/\swidth=["']?(\d+)/i)?.[1] ?? '0');
+    if (width > 0 && width < 60) continue;
+    seen.add(url);
+    const alt = decodeEntities(tag[0].match(/\salt=["']([^"']*)["']/i)?.[1] ?? '').slice(0, 120);
+    out.push({ url, alt });
   }
-
-  return [...new Set(matches)].slice(0, 20);
+  return out;
 }
 
-/**
- * Fetches a remote image and returns it as a base64 string.
- */
-async function fetchImageAsBase64(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const buffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (const byte of bytes) {
-      binary += String.fromCharCode(byte);
-    }
-    return btoa(binary);
-  } catch {
-    return null;
-  }
+function htmlToText(html: string): string {
+  return decodeEntities(
+    html
+      .replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)>/gi, '\n')
+      .replace(/<[^>]+>/g, ' '),
+  )
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n')
+    .trim()
+    .slice(0, MAX_TEXT_CHARS);
 }
 
-/**
- * Tags a single product image via Gemini Vision.
- */
-async function tagImageWithGemini(imageBase64: string): Promise<AITagResult | null> {
-  try {
-    const response = await fetch(GEMINI_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `Analyze this clothing item. Return ONLY a valid JSON object with no extra text:
-{
-  "category": "top" | "bottom" | "shoe" | "outerwear" | "accessory",
-  "color": "string",
-  "pattern": "string (e.g., solid, striped, floral, plaid, graphic)",
-  "season": ["spring" | "summer" | "autumn" | "winter"],
-  "formality": "casual" | "business_casual" | "formal"
-}
-If this is NOT a clothing item (logo, banner, etc.), return: {"skip": true}`,
-              },
-              {
-                inlineData: {
-                  mimeType: 'image/jpeg',
-                  data: imageBase64,
-                },
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          maxOutputTokens: 200,
-        },
-      }),
-    });
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const raw: string = data.candidates[0].content.parts[0].text;
-    const parsed = JSON.parse(raw);
-
-    if (parsed.skip) return null;
-    return parsed as AITagResult;
-  } catch {
-    return null;
-  }
-}
+const SYSTEM_PROMPT = `You read online-shopping order confirmation emails and list the clothing items that were bought.
+Only include wearable items: tops, bottoms, dresses (category "top"), shoes, outerwear, and accessories like bags, hats, belts, jewelry, scarves.
+Ignore non-clothing products, shipping lines, discounts, recommendations ("you may also like"), and marketing.
+For each item, pick the product photo from the numbered image list that matches it, or null if none matches.
+Return ONLY a JSON array (empty if there are no clothing items):
+[{ "name": "short product name", "category": "top" | "bottom" | "shoe" | "outerwear" | "accessory", "imageIndex": number | null }]`;
 
 Deno.serve(async (req: Request) => {
-  if (req.method !== 'POST') {
-    return new Response('Method Not Allowed', { status: 405 });
-  }
+  if (req.method !== 'POST') return json({ error: 'Method Not Allowed' }, 405);
 
   try {
-    const payload: WebhookPayload = await req.json();
-    const { html, from } = payload;
-    let { userId } = payload;
+    await requireUserId(req);
+    const { emailHtml, emailSubject = '', fromAddress = '' }: ParseReceiptBody = await req.json();
+    if (!emailHtml) return json({ error: 'Missing emailHtml' }, 400);
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const images = extractImages(emailHtml);
+    const text = htmlToText(emailHtml);
+    if (!text) return json({ success: true, items: [] });
 
-    // Identity bridge: if userId not provided, look it up by sender email
-    if (!userId && from) {
-      const senderEmail = from.match(/<(.+)>/)?.[1] ?? from.trim();
-      const { data: user } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', senderEmail)
-        .single();
-      userId = user?.id ?? null;
-    }
+    const imageList = images.length
+      ? images.map((img, i) => `[${i}] ${img.alt || '(no alt text)'} — ${img.url}`).join('\n')
+      : '(no product images)';
 
-    if (!html || !userId) {
-      return new Response(JSON.stringify({ error: 'Missing html or could not resolve userId from sender email.' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    const productImageUrls = extractProductImageUrls(html);
-
-    if (productImageUrls.length === 0) {
-      return new Response(
-        JSON.stringify({ success: true, itemsAdded: 0, message: 'No product images found in email' }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      );
-    }
-
-    let itemsAdded = 0;
-
-    for (const imageUrl of productImageUrls) {
-      // Fetch the remote stock photo and convert to base64 for Gemini
-      const base64 = await fetchImageAsBase64(imageUrl);
-      if (!base64) continue;
-
-      const tags = await tagImageWithGemini(base64);
-      if (!tags) continue;
-
-      const { error } = await supabase.from('closet_items').insert({
-        user_id: userId,
-        image_url: imageUrl,
-        category: tags.category,
-        color: tags.color,
-        pattern: tags.pattern,
-        season: tags.season,
-        formality: tags.formality,
-        is_in_wash: false,
-      });
-
-      if (!error) itemsAdded++;
-    }
-
-    // TODO Sprint 2: Send Expo push notification when items are ready.
-
-    return new Response(JSON.stringify({ success: true, itemsAdded }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+    const result = await callGeminiJson<unknown>({
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{
+        parts: [{
+          text: `From: ${fromAddress}\nSubject: ${emailSubject}\n\nImages:\n${imageList}\n\nEmail text:\n${text}`,
+        }],
+      }],
+      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1200, temperature: 0.1 },
     });
+
+    const extracted: ExtractedItem[] = Array.isArray(result) ? result : [];
+    const items = extracted
+      .filter((it) => it && typeof it.name === 'string' && CATEGORIES.includes(it.category))
+      .slice(0, 20)
+      .map((it) => {
+        const idx = typeof it.imageIndex === 'number' ? it.imageIndex : -1;
+        return {
+          name: it.name.trim().slice(0, 120),
+          category: it.category,
+          imageUrl: idx >= 0 && idx < images.length ? images[idx].url : '',
+        };
+      });
+
+    return json({ success: true, items });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[parse-receipt]', message);
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const status = err instanceof GeminiError || err instanceof AuthError ? err.status : 500;
+    return json({ error: message }, status);
   }
 });

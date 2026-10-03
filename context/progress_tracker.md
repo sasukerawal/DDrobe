@@ -36,6 +36,11 @@
 - [x] Implement "In the Wash" toggle feature.
 - [x] Implement "Vacation Packer" constraint-based generation feature.
 - [x] Final UI polish, loading states, and haptic feedback implementation.
+- [x] **Full visual redesign** — all 4 tab screens (Stylist, Wardrobe, Lookbook, Profile) rewritten with "System Clarity" design system via impeccable skill.
+- [x] **Auth screens redesign** — sign-in, sign-up, forgot-password rebuilt with `AuthShell` (camel brand zone + animated white card). New features: password show/hide, password strength bar, Terms links, Reanimated entrance animation.
+- [x] **New screens added** — `change-password.tsx` (modal, strength bar) + `forgot-password.tsx` (two-step Clerk reset flow).
+- [x] **expo-notifications crash fix** — replaced top-level import with dynamic `await import()` inside `Platform.OS !== 'web'` guard in `_layout.tsx` and `profile.tsx`.
+- [x] **Missing SSO packages** — installed `expo-auth-session` + `expo-web-browser` for Google/Apple SSO.
 - [ ] Deploy backend services.
 - [ ] Execute TestFlight / Google Play internal testing.
 - [ ] Submit to App Store & Google Play.
@@ -52,6 +57,18 @@
 7. **Design System:** All colors centralized in `src/constants/theme.ts`. Components must never hardcode hex values.
 
 ## Active Blockers / Issues
+- ✅ **2026-10-02 Bug fixes — auth, DB schema, Expo Go crash, UI:**
+  1. **Metro `TransformError`** — removed em-dash comments + malformed JSX block comment (`*)`) from `AuthShell.tsx`; Metro cache cleared with `--clear`.
+  2. **Black TextInput on Android dark theme** — added `backgroundColor: 'transparent'` to `inputText` in all auth screens.
+  3. **expo-notifications crash in Expo Go** — added `Constants.appOwnership !== 'expo'` guard before dynamic import.
+  4. **Supabase UUID/TEXT mismatch** — migrated `users.id`, `closet_items.user_id`, `outfits_history.user_id`, `feed_posts.user_id` from UUID to TEXT. Created `requesting_user_id()` PG function to read Clerk JWT sub as TEXT. All RLS policies updated. Migration `003_fix_user_id_text.sql` applied to live DB.
+  5. **SSO "Unmatched Route"** — added `sso-callback.tsx` screen + `<Stack.Screen name="sso-callback">` in `_layout.tsx`.
+  6. **PGRST303 "JWT not yet valid"** — added 2-retry loop in `fetchCloset` and `fetchFeed`: catches PGRST303, waits 2s, retries with `getToken({ skipCache: true })` to handle Clerk JWT nbf clock skew vs Supabase server time.
+  7. **UI — replaced Alert error dialogs** with animated inline error banners (red tinted, dismissible, with Retry) in `explore.tsx` and `lookbook.tsx`.
+  8. **UI — filter pill animations** — `FilterPill` component uses Reanimated spring scale on press in Wardrobe tab.
+  9. **UI — empty states** — improved icon containers with borders; Lookbook empty state now has "Share a Look" CTA button.
+  10. **UI — loading states** — added descriptive loading text under ActivityIndicator on both tabs.
+
 - ✅ All Sprint 1 secrets configured.
 - ✅ **2026-09-04 Bug fix + critical gap session:** Fixed 6 compile errors + 4 critical feature gaps. `npx tsc --noEmit` returns 0 errors.
   

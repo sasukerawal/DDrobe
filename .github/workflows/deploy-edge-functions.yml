@@ -16,26 +16,10 @@ jobs:
         with:
           version: latest
 
-      - name: Link Supabase project
-        run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
+      # Deploys every function folder (folders starting with "_" are shared code).
+      # Function secrets are managed once with `supabase secrets set`, not from CI,
+      # so a missing GitHub secret can never blank a live key.
       - name: Deploy all Edge Functions
-        run: |
-          supabase functions deploy process-image
-          supabase functions deploy generate-outfit
-          supabase functions deploy create-post
-          supabase functions deploy parse-receipt
-          supabase functions deploy send-morning-notification
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
-      - name: Set Edge Function secrets
-        run: |
-          supabase secrets set \
-            GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
-            OPENWEATHER_API_KEY="${{ secrets.OPENWEATHER_API_KEY }}" \
-            SUPABASE_SERVICE_ROLE_KEY="${{ secrets.SUPABASE_SERVICE_ROLE_KEY_SECRET }}"
+        run: supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

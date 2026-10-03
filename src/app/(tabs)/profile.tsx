@@ -2,9 +2,9 @@ import React, { useMemo, useState } from 'react';
 import {
   Alert,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,8 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth, useUser } from '@clerk/expo';
 import * as Haptics from 'expo-haptics';
-import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import { useAuthStore } from '@/store/useAuthStore';
 import { useAppStore } from '@/store/useAppStore';
@@ -27,6 +27,7 @@ type Formality = 'casual' | 'business_casual' | 'formal';
 export default function ProfileScreen() {
   const { signOut, getToken } = useAuth();
   const { user } = useUser();
+  const router = useRouter();
   const { dbUser, setDbUser } = useAuthStore();
   const { closetItems } = useAppStore();
 
@@ -103,6 +104,11 @@ export default function ProfileScreen() {
   };
 
   const handleNotificationsPress = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Notifications', 'Push notifications are only supported on the mobile app.');
+      return;
+    }
+    const Notifications = await import('expo-notifications');
     const { status } = await Notifications.getPermissionsAsync();
     if (status === 'granted') {
       Alert.alert(
@@ -119,7 +125,7 @@ export default function ProfileScreen() {
           [{ text: 'OK' }],
         );
       } else {
-        Alert.alert('Notifications On', 'You\'ll now receive outfit recommendations!', [{ text: 'Great!' }]);
+        Alert.alert('Notifications On', "You'll now receive outfit recommendations!", [{ text: 'Great!' }]);
       }
     }
   };
@@ -128,11 +134,7 @@ export default function ProfileScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: () => signOut(),
-      },
+      { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
     ]);
   };
 
@@ -140,7 +142,7 @@ export default function ProfileScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert(
       'Delete Account',
-      'This will permanently delete your account, closet, and all data. This cannot be undone.',
+      'This will permanently delete your account, wardrobe, and all data. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -148,7 +150,22 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await user?.delete();
+              const token = await getToken({ skipCache: true });
+              if (!token) throw new Error('Not authenticated');
+              const client = createAuthenticatedClient(token);
+              const { error } = await client.functions.invoke('delete-account', { body: {} });
+              if (error) {
+                let msg = error.message ?? 'Failed to delete account.';
+                try {
+                  const detail = await (error as any).context?.json?.();
+                  if (detail?.error) msg = detail.error;
+                } catch {}
+                throw new Error(msg);
+              }
+              setDbUser(null);
+              useAppStore.getState().setClosetItems([]);
+              useAppStore.getState().setDailyOutfits([]);
+              await signOut().catch(() => {});
             } catch (e: unknown) {
               const msg = e instanceof Error ? e.message : 'Failed to delete account.';
               Alert.alert('Error', msg);
@@ -163,16 +180,18 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
 
-        {/* ─── Avatar & name ─── */}
+        {/* ── Avatar header ── */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarCircle}>
             <Text style={styles.avatarText}>{initials || '?'}</Text>
           </View>
           <Text style={styles.displayName}>{displayName}</Text>
-          {user?.username && <Text style={styles.username}>@{user.username}</Text>}
+          {user?.username && (
+            <Text style={styles.username}>@{user.username}</Text>
+          )}
           <Text style={styles.email}>{email}</Text>
           <TouchableOpacity
-            style={styles.editProfileButton}
+            style={styles.editButton}
             onPress={() => {
               setEditFirstName(user?.firstName ?? '');
               setEditLastName(user?.lastName ?? '');
@@ -181,15 +200,15 @@ export default function ProfileScreen() {
             }}
             activeOpacity={0.8}
           >
-            <Text style={styles.editProfileButtonText}>Edit Profile</Text>
+            <Text style={styles.editButtonText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ─── Stats row ─── */}
+        {/* ── Stats ── */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>{closetItems.length}</Text>
-            <Text style={styles.statLabel}>Closet Items</Text>
+            <Text style={styles.statLabel}>Items</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
@@ -203,29 +222,21 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ─── Style Preferences ─── */}
-        <SectionHeader title="Style Preferences" />
-        <View style={styles.card}>
-          <Text style={styles.cardSubtitle}>
-            The AI uses this to weight outfit suggestions toward your preferred dress code.
+        {/* ── Style Preferences ── */}
+        <SectionHeader title="Style" />
+        <View style={styles.prefCard}>
+          <Text style={styles.prefHint}>
+            The AI weights outfit suggestions toward your preferred dress code.
           </Text>
           <View style={styles.formalityRow}>
             {(['casual', 'business_casual', 'formal'] as Formality[]).map((f) => (
               <TouchableOpacity
                 key={f}
-                style={[
-                  styles.formalityChip,
-                  preferredFormality === f && styles.formalityChipActive,
-                ]}
+                style={[styles.formalityChip, preferredFormality === f && styles.formalityChipActive]}
                 onPress={() => handleFormalityChange(f)}
                 activeOpacity={0.8}
               >
-                <Text
-                  style={[
-                    styles.formalityChipText,
-                    preferredFormality === f && styles.formalityChipTextActive,
-                  ]}
-                >
+                <Text style={[styles.formalityChipText, preferredFormality === f && styles.formalityChipTextActive]}>
                   {f === 'business_casual' ? 'Business' : f.charAt(0).toUpperCase() + f.slice(1)}
                 </Text>
               </TouchableOpacity>
@@ -233,50 +244,63 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ─── Notifications ─── */}
+        {/* ── Import ── */}
+        <SectionHeader title="Import" />
+        <View style={styles.rowGroup}>
+          <RowItem
+            icon="mail-outline"
+            label="Import from Email"
+            sublabel="Scan purchase emails for clothes"
+            onPress={() => router.push('/email-import' as never)}
+            showChevron
+            accent
+          />
+        </View>
+
+        {/* ── Notifications ── */}
         <SectionHeader title="Notifications" />
-        <RowItem
-          icon="notifications-outline"
-          label="Push Notifications"
-          onPress={handleNotificationsPress}
-          showChevron
-        />
+        <View style={styles.rowGroup}>
+          <RowItem
+            icon="notifications-outline"
+            label="Push Notifications"
+            onPress={handleNotificationsPress}
+            showChevron
+          />
+        </View>
 
-        {/* ─── Account ─── */}
+        {/* ── Account ── */}
         <SectionHeader title="Account" />
-        <RowItem
-          icon="mail-outline"
-          label="Email"
-          value={email}
-        />
-        <RowItem
-          icon="shield-checkmark-outline"
-          label="Password"
-          value="Managed by Clerk"
-        />
-        <RowItem
-          icon="log-out-outline"
-          label="Sign Out"
-          onPress={handleSignOut}
-          danger
-        />
+        <View style={styles.rowGroup}>
+          <RowItem icon="mail-outline" label="Email" value={email} />
+          <View style={styles.rowSeparator} />
+          {user?.passwordEnabled && (
+            <>
+              <RowItem
+                icon="lock-closed-outline"
+                label="Change Password"
+                onPress={() => router.push('/change-password' as never)}
+              />
+              <View style={styles.rowSeparator} />
+            </>
+          )}
+          <RowItem icon="log-out-outline" label="Sign Out" onPress={handleSignOut} danger />
+        </View>
 
-        {/* ─── Danger Zone ─── */}
+        {/* ── Danger ── */}
         <SectionHeader title="Danger Zone" />
-        <RowItem
-          icon="trash-outline"
-          label="Delete Account"
-          onPress={handleDeleteAccount}
-          danger
-        />
+        <View style={styles.rowGroup}>
+          <RowItem icon="trash-outline" label="Delete Account" onPress={handleDeleteAccount} danger />
+        </View>
 
         <Text style={styles.versionText}>DDrobe v1.0.0</Text>
+
       </ScrollView>
 
-      {/* ─── Edit Profile Modal ─── */}
+      {/* ── Edit Profile Modal ── */}
       <Modal visible={editModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Edit Profile</Text>
 
             <View style={styles.modalField}>
@@ -286,7 +310,7 @@ export default function ProfileScreen() {
                 value={editFirstName}
                 onChangeText={setEditFirstName}
                 placeholder="First name"
-                placeholderTextColor={colors.textSecondary}
+                placeholderTextColor={colors.textTertiary}
                 autoCapitalize="words"
               />
             </View>
@@ -298,7 +322,7 @@ export default function ProfileScreen() {
                 value={editLastName}
                 onChangeText={setEditLastName}
                 placeholder="Last name"
-                placeholderTextColor={colors.textSecondary}
+                placeholderTextColor={colors.textTertiary}
                 autoCapitalize="words"
               />
             </View>
@@ -310,7 +334,7 @@ export default function ProfileScreen() {
                 value={editUsername}
                 onChangeText={(t) => setEditUsername(t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
                 placeholder="your_username"
-                placeholderTextColor={colors.textSecondary}
+                placeholderTextColor={colors.textTertiary}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
@@ -318,18 +342,18 @@ export default function ProfileScreen() {
 
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={styles.modalCancelButton}
+                style={styles.ghostButton}
                 onPress={() => setEditModalVisible(false)}
                 disabled={saving}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.ghostButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalSaveButton, saving && styles.buttonDisabled]}
+                style={[styles.primaryButton, saving && styles.buttonDisabled]}
                 onPress={handleSaveProfile}
                 disabled={saving}
               >
-                <Text style={styles.modalSaveText}>{saving ? 'Saving…' : 'Save'}</Text>
+                <Text style={styles.primaryButtonText}>{saving ? 'Saving…' : 'Save'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -348,40 +372,45 @@ function SectionHeader({ title }: { title: string }) {
 function RowItem({
   icon,
   label,
+  sublabel,
   value,
   onPress,
   danger = false,
+  accent = false,
   showChevron = false,
 }: {
   icon: string;
   label: string;
+  sublabel?: string;
   value?: string;
   onPress?: () => void;
   danger?: boolean;
+  accent?: boolean;
   showChevron?: boolean;
 }) {
   const colors = useThemeColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const iconColor = danger ? Colors.danger : accent ? Colors.accent : colors.textSecondary;
   const content = (
     <View style={styles.rowItem}>
-      <Ionicons
-        name={icon as any}
-        size={20}
-        color={danger ? Colors.danger : colors.textSecondary}
-        style={styles.rowIcon}
-      />
-      <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
+      <View style={[styles.rowIconContainer, accent && styles.rowIconContainerAccent]}>
+        <Ionicons name={icon as any} size={18} color={iconColor} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
+        {sublabel && <Text style={styles.rowSublabel}>{sublabel}</Text>}
+      </View>
       {value ? <Text style={styles.rowValue}>{value}</Text> : null}
       {(onPress && !value) || showChevron ? (
-        <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+        <Ionicons name="chevron-forward" size={15} color={colors.textTertiary} />
       ) : null}
     </View>
   );
 
-  if (!onPress) return <View style={styles.rowWrapper}>{content}</View>;
+  if (!onPress) return <View>{content}</View>;
 
   return (
-    <TouchableOpacity style={styles.rowWrapper} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       {content}
     </TouchableOpacity>
   );
@@ -393,10 +422,10 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.background,
   },
   container: {
-    paddingBottom: Spacing.six,
+    paddingBottom: 80,
   },
 
-  // Avatar section
+  // ── Avatar ──
   avatarSection: {
     alignItems: 'center',
     paddingTop: Spacing.five,
@@ -404,19 +433,17 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   avatarCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: Colors.primary,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.three,
-    borderWidth: 3,
-    borderColor: Colors.primaryLight,
   },
   avatarText: {
-    color: '#fff',
-    fontSize: 32,
+    color: '#FFFFFF',
+    fontSize: 28,
     fontWeight: '700',
     letterSpacing: 1,
   },
@@ -424,11 +451,13 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: c.text,
+    letterSpacing: -0.3,
     marginBottom: 2,
   },
   username: {
-    fontSize: 15,
-    color: Colors.primaryLight,
+    fontSize: 14,
+    color: Colors.accent,
+    fontWeight: '500',
     marginBottom: 2,
   },
   email: {
@@ -436,20 +465,20 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.textSecondary,
     marginBottom: Spacing.three,
   },
-  editProfileButton: {
-    borderWidth: 1.5,
+  editButton: {
+    borderWidth: 1,
     borderColor: c.border,
-    borderRadius: Radius.button,
-    paddingVertical: Spacing.two,
+    borderRadius: Radius.pill,
+    paddingVertical: 7,
     paddingHorizontal: Spacing.four,
   },
-  editProfileButtonText: {
+  editButtonText: {
     color: c.text,
-    fontWeight: '600',
+    fontWeight: '500',
     fontSize: 14,
   },
 
-  // Stats
+  // ── Stats ──
   statsRow: {
     flexDirection: 'row',
     marginHorizontal: Spacing.four,
@@ -466,6 +495,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: c.text,
+    letterSpacing: -0.5,
   },
   statLabel: {
     fontSize: 11,
@@ -475,42 +505,42 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   statDivider: {
     width: 1,
-    backgroundColor: c.border,
-    marginVertical: Spacing.one,
+    backgroundColor: c.separator,
+    marginVertical: 4,
   },
 
-  // Section headers
+  // ── Section headers ──
   sectionHeader: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: c.textSecondary,
-    letterSpacing: 0.8,
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
     marginHorizontal: Spacing.four,
     marginTop: Spacing.four,
     marginBottom: Spacing.two,
   },
 
-  // Card (for style prefs)
-  card: {
+  // ── Preference card ──
+  prefCard: {
     marginHorizontal: Spacing.four,
     backgroundColor: c.backgroundElement,
     borderRadius: Radius.card,
     padding: Spacing.three,
     gap: Spacing.three,
   },
-  cardSubtitle: {
+  prefHint: {
     fontSize: 13,
     color: c.textSecondary,
     lineHeight: 18,
   },
   formalityRow: {
     flexDirection: 'row',
-    gap: Spacing.two,
+    gap: 8,
   },
   formalityChip: {
     flex: 1,
-    paddingVertical: Spacing.two,
+    paddingVertical: 8,
     borderRadius: Radius.button,
     alignItems: 'center',
     backgroundColor: c.background,
@@ -518,8 +548,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderColor: c.border,
   },
   formalityChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.text,
+    borderColor: c.text,
   },
   formalityChipText: {
     fontSize: 13,
@@ -527,76 +557,106 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.textSecondary,
   },
   formalityChipTextActive: {
-    color: '#fff',
+    color: c.background,
   },
 
-  // Row items
-  rowWrapper: {
+  // ── Row group ──
+  rowGroup: {
     marginHorizontal: Spacing.four,
-    marginBottom: 2,
     backgroundColor: c.backgroundElement,
     borderRadius: Radius.card,
     overflow: 'hidden',
   },
+  rowSeparator: {
+    height: 0.5,
+    backgroundColor: c.separator,
+    marginLeft: 52,
+  },
   rowItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.three,
+    paddingVertical: 13,
     paddingHorizontal: Spacing.three,
-    minHeight: 52,
+    minHeight: 50,
   },
-  rowIcon: {
-    marginRight: Spacing.three,
-    width: 24,
+  rowIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: c.backgroundSelected,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    flexShrink: 0,
+  },
+  rowIconContainerAccent: {
+    backgroundColor: 'rgba(184,147,106,0.15)',
   },
   rowLabel: {
-    flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     color: c.text,
+    fontWeight: '400',
+  },
+  rowSublabel: {
+    fontSize: 12,
+    color: c.textSecondary,
+    marginTop: 1,
   },
   rowLabelDanger: {
     color: Colors.danger,
   },
   rowValue: {
-    fontSize: 14,
+    fontSize: 13,
     color: c.textSecondary,
-    marginRight: Spacing.two,
+    marginRight: 4,
+    flexShrink: 1,
+    maxWidth: '50%',
   },
 
-  // Edit modal
+  // ── Edit Modal ──
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
   },
-  modalContent: {
-    backgroundColor: c.backgroundElement,
+  modalSheet: {
+    backgroundColor: c.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: Spacing.four,
-    gap: Spacing.three,
     paddingBottom: Spacing.six,
+    gap: Spacing.three,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: c.border,
+    alignSelf: 'center',
+    marginBottom: 4,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: c.text,
-    marginBottom: Spacing.one,
+    letterSpacing: -0.3,
   },
   modalField: {
-    gap: Spacing.one,
+    gap: 6,
   },
   modalLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: c.textSecondary,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   modalInput: {
-    backgroundColor: c.background,
+    backgroundColor: c.backgroundElement,
     borderRadius: Radius.input,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two + 4,
-    fontSize: 16,
+    paddingVertical: 12,
+    fontSize: 15,
     color: c.text,
     borderWidth: 1,
     borderColor: c.border,
@@ -604,46 +664,43 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    gap: Spacing.three,
-    marginTop: Spacing.two,
+    gap: Spacing.two,
+    marginTop: 4,
   },
-  modalCancelButton: {
+  ghostButton: {
     flex: 1,
     borderRadius: Radius.button,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: c.border,
-    paddingVertical: Spacing.three,
+    paddingVertical: 14,
     alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
   },
-  modalCancelText: {
+  ghostButtonText: {
     color: c.text,
-    fontWeight: '600',
-    fontSize: 16,
+    fontWeight: '500',
+    fontSize: 15,
   },
-  modalSaveButton: {
+  primaryButton: {
     flex: 1,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.text,
     borderRadius: Radius.button,
-    paddingVertical: Spacing.three,
+    paddingVertical: 14,
     alignItems: 'center',
-    minHeight: 52,
-    justifyContent: 'center',
   },
-  modalSaveText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
+  primaryButtonText: {
+    color: c.background,
+    fontWeight: '600',
+    fontSize: 15,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
 
   versionText: {
     textAlign: 'center',
     fontSize: 12,
-    color: c.textSecondary,
+    color: c.textTertiary,
     marginTop: Spacing.five,
+    letterSpacing: 0.3,
   },
 });
