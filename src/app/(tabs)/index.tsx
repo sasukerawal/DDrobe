@@ -11,6 +11,7 @@ import {
   TextInput,
 } from 'react-native';
 import { useAuth } from '@clerk/expo';
+import { useRouter } from 'expo-router';
 import type { WeatherContext } from '@/types';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -52,6 +53,7 @@ try {
 }
 
 export default function DailyStylistScreen() {
+  const router = useRouter();
   const { getToken, userId } = useAuth();
   const { closetItems, setClosetItems, dailyOutfits, setDailyOutfits, removeOutfit } = useAppStore();
   const [loading, setLoading] = useState(false);
@@ -344,9 +346,14 @@ export default function DailyStylistScreen() {
         onDismiss={() => setMenuVisible(false)}
         options={[
           {
-            label: 'Vacation Packer',
+            label: 'Trip outfits',
             icon: 'airplane-outline',
             onPress: () => setVacationModalVisible(true),
+          },
+          {
+            label: 'Packing lists',
+            icon: 'briefcase-outline',
+            onPress: () => router.push('/trips' as never),
           },
           {
             label: 'Refresh Outfits',

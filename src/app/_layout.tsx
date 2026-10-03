@@ -121,6 +121,9 @@ function InitialLayout() {
         <Stack.Screen name="outfit/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="outfit-builder" options={{ presentation: 'modal' }} />
         <Stack.Screen name="stats" />
+        <Stack.Screen name="trips/index" />
+        <Stack.Screen name="trips/[id]" />
+        <Stack.Screen name="wishlist" />
         <Stack.Screen name="change-password" options={{ presentation: 'modal' }} />
         <Stack.Screen name="email-import" options={{ presentation: 'fullScreenModal', headerShown: false }} />
         <Stack.Screen name="sso-callback" options={{ headerShown: false }} />

@@ -262,6 +262,26 @@ export default function ProfileScreen() {
           />
         </View>
 
+        {/* ── Plan & shop ── */}
+        <SectionHeader title="Plan & shop" />
+        <View style={styles.rowGroup}>
+          <RowItem
+            icon="airplane-outline"
+            label="Trips"
+            sublabel="Packing lists from your own clothes"
+            onPress={() => router.push('/trips' as never)}
+            showChevron
+          />
+          <View style={styles.rowSeparator} />
+          <RowItem
+            icon="heart-outline"
+            label="Wishlist"
+            sublabel="Things you want, plus what's missing"
+            onPress={() => router.push('/wishlist' as never)}
+            showChevron
+          />
+        </View>
+
         {/* ── Import ── */}
         <SectionHeader title="Import" />
         <View style={styles.rowGroup}>

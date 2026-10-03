@@ -53,6 +53,48 @@ export interface PlannedOutfit {
   outfit: SavedOutfit;
 }
 
+export interface Trip {
+  id: string;
+  user_id: string;
+  name: string;
+  destination: string;
+  purpose: string;
+  start_date: string; // ISO date
+  nights: number;
+  extras: string[];
+  created_at: string;
+}
+
+export interface TripItem {
+  id: string;
+  trip_id: string;
+  item_id: string;
+  packed: boolean;
+  reason: string;
+  item: ClosetItem;
+}
+
+export interface WishlistItem {
+  id: string;
+  user_id: string;
+  name: string;
+  category: ClosetItem['category'] | null;
+  color: string;
+  brand: string;
+  price: number | null;
+  url: string;
+  notes: string;
+  purchased: boolean;
+  created_at: string;
+}
+
+export interface WardrobeGap {
+  title: string;
+  category: ClosetItem['category'] | null;
+  color: string;
+  reason: string;
+}
+
 export interface WearLogEntry {
   id: string;
   user_id: string;
