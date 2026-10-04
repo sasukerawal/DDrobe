@@ -149,7 +149,7 @@ Deno.serve(async (req: Request) => {
 
     const used = userRes.data?.daily_generations_used ?? 0;
     if (used >= DAILY_LIMIT) {
-      return json({ limitReached: true, error: "You've used today's AI requests. They reset at midnight (UTC)." }, 429);
+      return json({ limitReached: true, error: "You've used today's AI requests. They reset at midnight." }, 429);
     }
 
     const items = (closetRes.data ?? []) as Item[];

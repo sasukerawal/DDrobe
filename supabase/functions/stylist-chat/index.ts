@@ -51,7 +51,7 @@ Deno.serve(async (req: Request) => {
 
     const used = userRes.data?.daily_chat_used ?? 0;
     if (used >= DAILY_CHAT_LIMIT) {
-      return json({ limitReached: true, error: "That's today's chat limit. It resets at midnight (UTC)." }, 429);
+      return json({ limitReached: true, error: "That's today's chat limit. It resets at midnight." }, 429);
     }
 
     const closet = closetRes.data ?? [];

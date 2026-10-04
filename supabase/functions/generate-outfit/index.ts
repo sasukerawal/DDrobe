@@ -109,7 +109,7 @@ Deno.serve(async (req: Request) => {
 
     const used = userRes.data?.daily_generations_used ?? 0;
     if (used >= DAILY_LIMIT) {
-      return json({ limitReached: true, error: 'Daily limit reached. Come back tomorrow for new outfits.' }, 429);
+      return json({ limitReached: true, error: 'Daily limit reached. New outfits unlock at midnight.' }, 429);
     }
 
     const availableItems = (closetRes.data ?? []).filter((i: ClosetItem) => !i.is_in_wash);

@@ -1,4 +1,4 @@
-import type { createAuthenticatedClient } from './supabase';
+import { invokeFunction, type createAuthenticatedClient } from './supabase';
 
 type Client = ReturnType<typeof createAuthenticatedClient>;
 
@@ -50,16 +50,45 @@ function toPost(row: Record<string, unknown>, likedIds: Set<string>, names: Map<
 
 const POST_SELECT = 'id, user_id, image_url, caption, created_at, post_likes(count), post_comments(count)';
 
+// Ids of posts and comments the current user has reported (hidden from them).
+async function myReports(client: Client): Promise<{ posts: Set<string>; comments: Set<string> }> {
+  const { data } = await client.from('content_reports').select('post_id, comment_id');
+  const rows = (data ?? []) as { post_id: string | null; comment_id: string | null }[];
+  return {
+    posts: new Set(rows.map((r) => r.post_id).filter((id): id is string => Boolean(id))),
+    comments: new Set(rows.map((r) => r.comment_id).filter((id): id is string => Boolean(id))),
+  };
+}
+
 export async function fetchFeed(client: Client, userId: string): Promise<FeedPost[]> {
-  const { data, error } = await client
-    .from('feed_posts')
-    .select(POST_SELECT)
-    .eq('moderation_status', 'approved')
-    .order('created_at', { ascending: false })
-    .limit(100);
+  const [{ data, error }, reported] = await Promise.all([
+    client
+      .from('feed_posts')
+      .select(POST_SELECT)
+      .eq('moderation_status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(100),
+    myReports(client),
+  ]);
   if (error) throw error;
-  const rows = (data ?? []) as Record<string, unknown>[];
+  const rows = ((data ?? []) as Record<string, unknown>[]).filter((r) => !reported.posts.has(r.id as string));
   return enrich(client, userId, rows);
+}
+
+export async function report(
+  client: Client,
+  userId: string,
+  target: { postId: string } | { commentId: string },
+  reason: string,
+) {
+  const { error } = await client.from('content_reports').insert({
+    reporter_id: userId,
+    post_id: 'postId' in target ? target.postId : null,
+    comment_id: 'commentId' in target ? target.commentId : null,
+    reason: reason.slice(0, 200),
+  });
+  // Already reported by this user: treat as success.
+  if (error && (error as { code?: string }).code !== '23505') throw error;
 }
 
 export async function fetchPost(client: Client, userId: string, postId: string): Promise<FeedPost> {
@@ -88,21 +117,24 @@ export async function setLiked(client: Client, userId: string, postId: string, l
 }
 
 export async function fetchComments(client: Client, postId: string): Promise<PostComment[]> {
-  const { data, error } = await client
-    .from('post_comments')
-    .select('id, post_id, user_id, body, created_at')
-    .eq('post_id', postId)
-    .order('created_at', { ascending: true })
-    .limit(200);
+  const [{ data, error }, reported] = await Promise.all([
+    client
+      .from('post_comments')
+      .select('id, post_id, user_id, body, created_at')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true })
+      .limit(200),
+    myReports(client),
+  ]);
   if (error) throw error;
-  const rows = (data ?? []) as Omit<PostComment, 'author'>[];
+  const rows = ((data ?? []) as Omit<PostComment, 'author'>[]).filter((r) => !reported.comments.has(r.id));
   const names = await namesFor(client, rows.map((r) => r.user_id));
   return rows.map((r) => ({ ...r, author: names.get(r.user_id) || 'DDrobe member' }));
 }
 
-export async function addComment(client: Client, userId: string, postId: string, body: string) {
-  const { error } = await client.from('post_comments').insert({ post_id: postId, user_id: userId, body: body.trim().slice(0, 300) });
-  if (error) throw error;
+// Comments are moderated server-side before they are saved.
+export async function addComment(client: Client, postId: string, body: string) {
+  await invokeFunction(client, 'post-comment', { postId, body: body.trim().slice(0, 300) });
 }
 
 export async function deleteComment(client: Client, commentId: string) {

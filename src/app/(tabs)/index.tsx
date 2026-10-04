@@ -303,7 +303,7 @@ export default function DailyStylistScreen() {
         </Text>
         <Text style={styles.errorText}>
           {isDailyLimit
-            ? "You've used today's 10 outfit generations. New ones unlock at midnight (UTC)."
+            ? "You've used today's 10 outfit generations. New ones unlock at midnight."
             : errorMsg.includes('closet is empty')
             ? 'Add some clothes to your wardrobe first, then come back.'
             : 'Something went wrong. Check your connection and try again.'}

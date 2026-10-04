@@ -24,11 +24,15 @@ import {
   deleteComment,
   fetchComments,
   fetchPost,
+  report,
   setLiked,
   timeAgo,
   type FeedPost,
   type PostComment,
 } from '@/utils/lookbook';
+import { DropdownMenu } from '@/components/DropdownMenu';
+
+const REPORT_REASONS = ['Harassment or hate', 'Nudity or sexual content', 'Spam or scam', 'Something else'];
 import { createAuthenticatedClient } from '@/utils/supabase';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useThemeColors, type ThemeColors } from '@/hooks/useThemeColors';
@@ -45,6 +49,7 @@ export default function PostScreen() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ kind: 'post' | 'comment'; id: string } | null>(null);
   const listRef = useRef<FlatList<PostComment>>(null);
 
   const getClient = useCallback(async () => {
@@ -84,7 +89,7 @@ export default function PostScreen() {
     setSending(true);
     try {
       const client = await getClient();
-      await addComment(client, userId, id, draft);
+      await addComment(client, id, draft);
       setDraft('');
       setComments(await fetchComments(client, id));
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
@@ -95,9 +100,32 @@ export default function PostScreen() {
     }
   };
 
-  const confirmDeleteComment = (comment: PostComment) => {
+  const submitReport = async (reason: string) => {
+    if (!userId || !reportTarget) return;
+    const target = reportTarget;
+    setReportTarget(null);
+    try {
+      await report(await getClient(), userId, target.kind === 'post' ? { postId: target.id } : { commentId: target.id }, reason);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (target.kind === 'post') {
+        Alert.alert('Thanks for reporting', "You won't see this post again. We review reports to keep the Lookbook friendly.");
+        router.back();
+      } else {
+        setComments((list) => list.filter((c) => c.id !== target.id));
+        Alert.alert('Thanks for reporting', "You won't see this comment again.");
+      }
+    } catch (e) {
+      Alert.alert('Report not sent', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+
+  const onCommentLongPress = (comment: PostComment) => {
     const canDelete = comment.user_id === userId || post?.user_id === userId;
-    if (!canDelete) return;
+    if (!canDelete) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setReportTarget({ kind: 'comment', id: comment.id });
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert('Delete comment?', comment.body, [
       { text: 'Cancel', style: 'cancel' },
@@ -175,9 +203,27 @@ export default function PostScreen() {
             <Ionicons name="trash-outline" size={21} color={Colors.danger} />
           </TouchableOpacity>
         ) : (
-          <View style={styles.headerSide} />
+          <TouchableOpacity
+            onPress={() => setReportTarget({ kind: 'post', id: post.id })}
+            hitSlop={8}
+            style={[styles.headerSide, { alignItems: 'flex-end' }]}
+            accessibilityLabel="Report post"
+          >
+            <Ionicons name="flag-outline" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
         )}
       </View>
+
+      <DropdownMenu
+        visible={reportTarget !== null}
+        onDismiss={() => setReportTarget(null)}
+        title={reportTarget?.kind === 'post' ? 'Report this post' : 'Report this comment'}
+        options={REPORT_REASONS.map((reason) => ({
+          label: reason,
+          onPress: () => submitReport(reason),
+          destructive: true,
+        }))}
+      />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <FlatList
@@ -188,7 +234,7 @@ export default function PostScreen() {
           contentContainerStyle={styles.list}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
-            <Pressable onLongPress={() => confirmDeleteComment(item)} style={styles.comment}>
+            <Pressable onLongPress={() => onCommentLongPress(item)} style={styles.comment}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{(item.author[0] ?? '?').toUpperCase()}</Text>
               </View>

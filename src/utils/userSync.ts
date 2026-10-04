@@ -1,6 +1,15 @@
 import { createAuthenticatedClient } from './supabase';
 import type { User } from '@/types';
 
+// IANA name such as "Asia/Kolkata"; the database falls back to UTC for unknown names.
+function deviceTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 // Upserts the user row and returns the full row so callers can populate stores.
 // Safe to call on every sign-in — idempotent.
 export async function syncUserToSupabase(
@@ -13,7 +22,10 @@ export async function syncUserToSupabase(
 
   const { error: upsertError } = await supabase
     .from('users')
-    .upsert({ id: userId, email, display_name: displayName.slice(0, 40) }, { onConflict: 'id' });
+    .upsert(
+      { id: userId, email, display_name: displayName.slice(0, 40), timezone: deviceTimezone() },
+      { onConflict: 'id' },
+    );
 
   if (upsertError) {
     console.error('[userSync] Failed to sync user:', upsertError.message);

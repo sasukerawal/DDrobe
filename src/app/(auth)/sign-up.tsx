@@ -146,6 +146,8 @@ export default function SignUpScreen() {
       }
       if (createdSessionId && ssoSetActive) {
         await ssoSetActive({ session: createdSessionId });
+      } else if ((result as any).signUp?.status === 'missing_requirements') {
+        router.push('/(auth)/complete-sign-up' as never);
       } else if ((result as any).authSessionResult?.type === 'success') {
         Alert.alert(
           "Couldn't finish sign-up",
