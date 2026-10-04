@@ -4,7 +4,7 @@
 //   { action: 'gaps' }             -> suggests up to 5 pieces the wardrobe is missing
 // Both count toward the shared daily AI limit.
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callGeminiJson, GeminiError } from '../_shared/gemini.ts';
 import { AuthError, requireUserId } from '../_shared/auth.ts';
 
@@ -13,7 +13,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const DAILY_LIMIT = 10;
 const CATEGORIES = ['top', 'bottom', 'shoe', 'outerwear', 'accessory'];
 
-type Supabase = ReturnType<typeof createClient>;
+type Supabase = SupabaseClient;
 
 interface Item {
   id: string;

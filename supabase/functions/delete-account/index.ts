@@ -2,14 +2,14 @@
 // Deletes everything belonging to the caller (photos, rows), then the Clerk user.
 // Data goes first so a Clerk failure can be retried without leaving orphaned data.
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { AuthError, requireUserId } from '../_shared/auth.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const CLERK_SECRET_KEY = Deno.env.get('CLERK_SECRET_KEY')!;
 
-type Supabase = ReturnType<typeof createClient>;
+type Supabase = SupabaseClient;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

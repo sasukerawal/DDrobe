@@ -131,17 +131,15 @@ export default function LookbookScreen() {
     if (!userId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const like = !post.liked;
-    const apply = (liked: boolean) =>
-      setPosts(list => list.map(p => (p.id === post.id
-        ? { ...p, liked, likeCount: Math.max(0, p.likeCount + (liked === post.liked ? 0 : liked ? 1 : -1)) }
-        : p)));
-    apply(like);
+    const apply = (liked: boolean, likeCount: number) =>
+      setPosts(list => list.map(p => (p.id === post.id ? { ...p, liked, likeCount } : p)));
+    apply(like, Math.max(0, post.likeCount + (like ? 1 : -1)));
     try {
       const token = await getToken();
       if (!token) throw new Error('Not authenticated');
       await setLiked(createAuthenticatedClient(token), userId, post.id, like);
     } catch {
-      apply(post.liked);
+      apply(post.liked, post.likeCount);
     }
   };
 

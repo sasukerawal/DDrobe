@@ -26,6 +26,8 @@ const CATEGORY_LABEL: Record<string, string> = {
   top: 'Tops', bottom: 'Bottoms', shoe: 'Shoes', outerwear: 'Outerwear', accessory: 'Accessories',
 };
 
+const PAGE_SIZE = 1000;
+
 const RESALE_SITES = [
   { name: 'Vinted', url: 'https://www.vinted.com' },
   { name: 'Depop', url: 'https://www.depop.com' },
@@ -52,11 +54,20 @@ export default function StatsScreen() {
       const items = await ensureClosetLoaded(getToken, force);
       const token = await getToken();
       if (!token) throw new Error('Not signed in');
-      const { data, error: wearError } = await createAuthenticatedClient(token)
-        .from('wear_log')
-        .select('item_id, worn_on');
-      if (wearError) throw wearError;
-      setStats(computeStats(items, (data ?? []) as WearRow[]));
+      // Supabase caps each response at 1000 rows, so page through the full log.
+      const client = createAuthenticatedClient(token);
+      const wears: WearRow[] = [];
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error: wearError } = await client
+          .from('wear_log')
+          .select('item_id, worn_on')
+          .order('worn_on', { ascending: false })
+          .range(from, from + PAGE_SIZE - 1);
+        if (wearError) throw wearError;
+        wears.push(...((data ?? []) as WearRow[]));
+        if (!data || data.length < PAGE_SIZE) break;
+      }
+      setStats(computeStats(items, wears));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your stats.');
     } finally {
