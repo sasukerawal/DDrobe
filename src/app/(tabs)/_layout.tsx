@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { useColorScheme, Platform } from 'react-native';
+import { useColorScheme, Platform, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors } from '@/constants/theme';
@@ -7,7 +7,6 @@ import { Colors } from '@/constants/theme';
 export default function TabsLayout() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
-  const isLight = scheme !== 'dark';
 
   return (
     <Tabs
@@ -15,8 +14,8 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: colors.background,
-          borderTopWidth: 0.5,
-          borderTopColor: colors.separator,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.border,
           elevation: 0,
           shadowOpacity: 0,
           height: Platform.select({ ios: 84, android: 64 }),
@@ -25,9 +24,10 @@ export default function TabsLayout() {
         tabBarActiveTintColor: Colors.accent,
         tabBarInactiveTintColor: colors.textTertiary,
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '500',
-          letterSpacing: 0.2,
+          fontSize: 10,
+          fontWeight: '600',
+          letterSpacing: 0.4,
+          textTransform: 'uppercase',
         },
       }}
     >

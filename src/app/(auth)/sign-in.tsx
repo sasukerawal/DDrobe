@@ -261,16 +261,16 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
-    paddingHorizontal: 28,
+    paddingHorizontal: 24,
     paddingTop: 32,
     paddingBottom: 56,
   },
 
   heading: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '700',
     color: Colors.light.text,
-    letterSpacing: -0.6,
+    letterSpacing: -0.8,
     marginBottom: 6,
   },
   sub: {
@@ -299,17 +299,16 @@ const styles = StyleSheet.create({
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.light.backgroundElement,
+    backgroundColor: Colors.light.surface,
     borderRadius: Radius.input,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: Colors.light.border,
     minHeight: 50,
     paddingHorizontal: 14,
-    // Transition handled by React Native's layout engine on iOS; instant on Android
   },
   inputFocused: {
     borderColor: Colors.accent,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.light.surface,
   },
   inputText: {
     flex: 1,
@@ -325,7 +324,7 @@ const styles = StyleSheet.create({
   // CTA
   primaryBtn: {
     backgroundColor: Colors.primary,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.button,
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
@@ -346,12 +345,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: Colors.light.border,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.button,
     paddingVertical: 14,
     minHeight: 50,
-    backgroundColor: Colors.light.background,
+    backgroundColor: Colors.light.surface,
   },
   socialBtnPressed: {
     backgroundColor: Colors.light.backgroundElement,

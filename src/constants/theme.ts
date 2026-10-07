@@ -13,44 +13,44 @@ import { Platform } from 'react-native';
 export const Colors = {
   // ── Light mode ──────────────────────────────────────────────
   light: {
-    text: '#1C1C1E',
-    textSecondary: '#6C6C70',
-    textTertiary: '#AEAEB2',
-    background: '#FFFFFF',
-    backgroundSecondary: '#F2F2F7',
-    backgroundElement: '#F2F2F7',
-    backgroundSelected: '#E5E5EA',
+    text: '#111111',
+    textSecondary: '#6B6B6B',
+    textTertiary: '#ABABAB',
+    background: '#F7F6F3',
+    backgroundSecondary: '#EEECEA',
+    backgroundElement: '#EEECEA',
+    backgroundSelected: '#E3E1DC',
     surface: '#FFFFFF',
-    border: 'rgba(60,60,67,0.12)',
-    separator: 'rgba(60,60,67,0.08)',
+    border: 'rgba(0,0,0,0.07)',
+    separator: 'rgba(0,0,0,0.05)',
   },
   // ── Dark mode ────────────────────────────────────────────────
   dark: {
-    text: '#FFFFFF',
+    text: '#F5F5F0',
     textSecondary: '#8E8E93',
     textTertiary: '#48484A',
-    background: '#000000',
-    backgroundSecondary: '#1C1C1E',
-    backgroundElement: '#1C1C1E',
-    backgroundSelected: '#2C2C2E',
-    surface: '#1C1C1E',
-    border: 'rgba(84,84,88,0.65)',
-    separator: 'rgba(84,84,88,0.45)',
+    background: '#0E0E0C',
+    backgroundSecondary: '#1A1A18',
+    backgroundElement: '#1A1A18',
+    backgroundSelected: '#2A2A27',
+    surface: '#1A1A18',
+    border: 'rgba(255,255,255,0.08)',
+    separator: 'rgba(255,255,255,0.05)',
   },
   // ── Brand (theme-independent) ────────────────────────────────
   primary: '#111111',       // near-black — filled buttons in light mode
-  primaryLight: '#444444',
+  primaryLight: '#333333',
   primaryDark: '#000000',
   accent: '#B8936A',        // warm camel/leather — premium accent
-  accentLight: '#D4AF87',
+  accentLight: '#CFA882',
   success: '#22C55E',
-  danger: '#EF4444',
-  warning: '#F59E0B',
+  danger: '#D94F4F',
+  warning: '#C9820A',
   // ── Flat convenience tokens (dark-mode defaults) ─────────────
-  background: '#000000',
-  text: '#FFFFFF',
-  surface: '#1C1C1E',
-  backgroundElement: '#1C1C1E',
+  background: '#0E0E0C',
+  text: '#F5F5F0',
+  surface: '#1A1A18',
+  backgroundElement: '#1A1A18',
   textSecondary: '#8E8E93',
 } as const;
 
@@ -88,10 +88,10 @@ export const Spacing = {
 } as const;
 
 export const Radius = {
-  card: 16,
-  button: 12,
-  input: 10,
-  small: 6,
+  card: 12,
+  button: 8,
+  input: 8,
+  small: 4,
   pill: 999,
 } as const;
 

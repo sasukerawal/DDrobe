@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
   error: { fontSize: 13, color: Colors.danger, lineHeight: 18 },
   primaryBtn: {
     backgroundColor: Colors.primary,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.button,
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',

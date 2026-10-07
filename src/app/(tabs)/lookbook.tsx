@@ -375,7 +375,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     gap: 6,
     paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.button,
     borderWidth: 1,
     borderColor: Colors.accentLight,
     backgroundColor: 'rgba(184,147,106,0.08)',

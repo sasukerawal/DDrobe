@@ -510,7 +510,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   editButton: {
     borderWidth: 1,
     borderColor: c.border,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.button,
     paddingVertical: 7,
     paddingHorizontal: Spacing.four,
   },

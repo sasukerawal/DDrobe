@@ -99,9 +99,9 @@ export function AuthShell({
         <View
           style={{
             flex: 1,
-            backgroundColor: '#FFFFFF',
-            borderTopLeftRadius: 28,
-            borderTopRightRadius: 28,
+            backgroundColor: '#F7F6F3',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
             overflow: 'hidden',
           }}
         >

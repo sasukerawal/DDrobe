@@ -418,7 +418,7 @@ const styles = StyleSheet.create({
 
   primaryBtn: {
     backgroundColor: Colors.primary,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.button,
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
@@ -434,8 +434,8 @@ const styles = StyleSheet.create({
 
   socialBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    borderWidth: 1.5, borderColor: Colors.light.border, borderRadius: Radius.pill,
-    paddingVertical: 14, minHeight: 50, backgroundColor: Colors.light.background,
+    borderWidth: 1, borderColor: Colors.light.border, borderRadius: Radius.button,
+    paddingVertical: 14, minHeight: 50, backgroundColor: Colors.light.surface,
   },
   socialBtnPressed: { backgroundColor: Colors.light.backgroundElement },
   socialBtnText: { color: Colors.light.text, fontWeight: '600', fontSize: 15 },
